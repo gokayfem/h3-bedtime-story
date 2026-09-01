@@ -18,7 +18,7 @@ export interface Card {
   order?: number;
 }
 
-export type VisualDuration = 5;
+export type VisualDuration = 5 | 10 | 15;
 
 export interface VisualSpec {
   concept: string;
@@ -66,7 +66,7 @@ export interface VisualState {
   revision: number;
   visualOperationId?: string;
   phase: VisualPhase;
-  stopReason?: "complete" | "interrupted" | "topic_changed" | "budget" | "failed";
+  stopReason?: "user_requested" | "complete" | "interrupted" | "topic_changed" | "budget" | "failed";
 }
 
 export interface TopicGraphState {

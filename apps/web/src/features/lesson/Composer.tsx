@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, type FormEvent } from "react";
 import type { SessionState } from "./types";
 import styles from "./lesson.module.css";
 
@@ -9,6 +10,7 @@ export interface ComposerProps {
   micAvailable: boolean;
   onToggleMic: () => void;
   onInterrupt: () => void;
+  onSendText: (text: string) => void;
 }
 
 /**
@@ -21,7 +23,9 @@ export function Composer({
   micAvailable,
   onToggleMic,
   onInterrupt,
+  onSendText,
 }: ComposerProps) {
+  const [text, setText] = useState("");
   const ended = status === "ended";
   const connecting = status === "connecting" || status === "reconnecting";
   const speaking = status === "speaking" || status === "thinking" || status === "redirecting";
@@ -35,10 +39,17 @@ export function Composer({
         : micEnabled
           ? "Listening"
           : "Paused";
+  const submitText = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const message = text.trim();
+    if (!message) return;
+    onSendText(message);
+    setText("");
+  };
 
   return (
     <footer className={styles.composerCol}>
-      <div className={styles.composer}>
+      <form className={styles.composer} onSubmit={submitText}>
         <button
           type="button"
           className={styles.micButton}
@@ -55,20 +66,38 @@ export function Composer({
             {!micEnabled && <line x1="4" y1="4" x2="20" y2="20" />}
           </svg>
         </button>
-        <div className={styles.waveform} aria-hidden="true" />
-        <p className={styles.input} role="status" aria-live="polite">
-          {voiceStatus}
-        </p>
+        {unavailable ? (
+          <input
+            className={styles.textInput}
+            aria-label="Tell the story what happens next"
+            placeholder="What should Niko and Moss do?"
+            value={text}
+            disabled={ended || connecting}
+            onChange={(event) => setText(event.target.value)}
+          />
+        ) : (
+          <>
+            <div className={styles.waveform} aria-hidden="true" />
+            <p className={styles.input} role="status" aria-live="polite">
+              {voiceStatus}
+            </p>
+          </>
+        )}
         {speaking && (
           <button type="button" className={styles.sendButton} onClick={onInterrupt}>
             Interrupt
           </button>
         )}
-      </div>
+        {unavailable && (
+          <button type="submit" className={styles.sendButton} disabled={!text.trim()}>
+            Send
+          </button>
+        )}
+      </form>
       <span className="sr-only">
         {unavailable
-          ? "Reconnect voice to continue the lesson."
-          : "Speak naturally. You can interrupt H3 Max Realtime Education at any time."}
+          ? "Voice is unavailable, so you can steer the story by typing."
+          : "Speak naturally. You can interrupt the storyteller at any time."}
       </span>
     </footer>
   );

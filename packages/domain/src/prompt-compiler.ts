@@ -1,12 +1,12 @@
 import type { VisualSpec } from "@axiom/protocol";
 import { AgeAppropriateSafetyPolicy, type SafetyCategory, type SafetyPolicy } from "./safety-policy";
 export const PERMANENT_VIDEO_STYLE = [
-  "STYLE BIBLE: apply a premium mixed 2D illustrated motion language to every frame.",
-  "Use hand-drawn cel animation with rough black ink contours, 1970s jazz-record editorial design, cream paper grain, restrained screen-print texture, halftone shadows, torn graphic shapes, sharp negative space, and shallow layered parallax.",
-  "Use deep cobalt, dry crimson, tobacco brown, muted ochre, warm ivory, and hard black as the stable palette, adjusting only local emphasis for scientific clarity.",
-  "Use limited animation on twos, graphic smear drawings during the fastest moves, decisive impact frames, fast acceleration with controlled deceleration, and brief stillness when an important scientific state lands.",
+  "STORY BIBLE: premium hand-drawn 2D storybook cel animation in every frame.",
+  "Recurring heroes: Niko, a small russet fox child with a cobalt scarf and cream muzzle; Moss, a round knee-high brass-and-moss robot with one warm amber eye. Preserve their exact size, colors, clothing, faces, and proportions.",
+  "World: an enchanted moonlit forest of giant blue leaves, warm lantern fungi, cream paper grain, rough ink contours, restrained screen-print texture, halftone shadows, torn graphic shapes, and shallow layered parallax.",
+  "Stable palette: deep cobalt, dry crimson, moss green, muted ochre, warm ivory, amber, and hard black.",
+  "Use expressive character acting, clear silhouettes, decisive action poses, graphic smear drawings during fast moves, environmental reactions, and a brief readable stillness when the beat lands.",
   "Keep every frame illustrated: no photorealism, live action, glossy 3D, generic anime faces, modern app graphics, fake interfaces, or text-like marks.",
-  "The style controls rendering only. Do not import recurring props, clue inventories, signature paths, transformation chains, camera routes, shot order, characters, story material, or layouts from any reference. Derive every subject, object, movement, and transition solely from the current scientific explanation.",
 ].join(" ");
 
 export class UnsafeVisualPromptError extends Error {
@@ -16,12 +16,14 @@ export class UnsafeVisualPromptError extends Error {
   }
 }
 
-export interface VisualPromptCompiler { compile(spec: VisualSpec): string }
+export interface VisualPromptCompiler {
+  compile(spec: VisualSpec, options?: { conditioned?: boolean }): string;
+}
 
 export class H3PromptCompiler implements VisualPromptCompiler {
   constructor(private readonly safetyPolicy: SafetyPolicy = new AgeAppropriateSafetyPolicy()) {}
 
-  compile(spec: VisualSpec): string {
+  compile(spec: VisualSpec, options: { conditioned?: boolean } = {}): string {
     const decision = this.safetyPolicy.assess(spec);
     if (!decision.allowed) throw new UnsafeVisualPromptError(decision.category, decision.guidance);
     const concept = normalize(spec.concept);
@@ -30,10 +32,15 @@ export class H3PromptCompiler implements VisualPromptCompiler {
     const continuityKey = normalize(spec.continuityKey);
     if (!concept || !intent || !description || !continuityKey) throw new Error("Visual prompt fields must not be blank");
 
+    const opening = options.conditioned
+      ? "For the target video, at 0.00 seconds into the target video, <Picture 1> is fully referenced. Continue directly from its exact character poses, positions, lighting, camera direction, and environment; do not reset the scene."
+      : "Open immediately in the enchanted forest with Niko and Moss already engaged in the action; establish them in one clear wide composition.";
     return [
       PERMANENT_VIDEO_STYLE,
-      `Scientific subject: ${description}`,
-      `Create a fresh, exactly ${spec.durationSeconds}-second, 16:9 scientific animation of only this subject. Keep the film text-free, centered, and fully illustrated. Use subject-specific composition and motion instead of repeating earlier props, layouts, or camera paths.`,
+      opening,
+      `STORY BEAT: ${concept}. NARRATIVE PURPOSE: ${intent}. ACTION: ${description}.`,
+      `Create exactly ${spec.durationSeconds} seconds in 16:9. Stage one readable causal mini-sequence: setup, committed action, visible consequence, then a stable two-second ending pose that can begin the next beat. Give Niko and Moss distinct purposeful actions; let the environment react. Maintain screen direction and spatial geography. No cuts that jump time, no montage, no new characters, no captions, dialogue text, logos, or written marks.`,
+      "SOUND: gentle forest ambience, character movement and tactile prop effects synchronized to action; whimsical instrumental underscore only, no spoken dialogue.",
     ].join(" ");
   }
 }

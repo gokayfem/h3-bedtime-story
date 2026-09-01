@@ -510,7 +510,7 @@ describe("BrowserRealtimeTransport", () => {
       item_id: "tool-1",
       call_id: "call-1",
       name: "stop_visual",
-      arguments: JSON.stringify({ reason: "complete" })
+      arguments: JSON.stringify({ reason: "user_requested" })
     });
     dispatch({ type: "error", error: { code: "provider_busy" } });
     dispatch({ type: "output_audio_buffer.cleared" });
@@ -907,7 +907,7 @@ describe("BrowserRealtimeTransport", () => {
     expect(sent).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: "x-fal-session.configure",
-        prompt: expect.stringContaining("science tutor"),
+        prompt: expect.stringContaining("steerable spoken adventure"),
         voice: "eve",
         turn_detection: {},
       }),
@@ -916,31 +916,22 @@ describe("BrowserRealtimeTransport", () => {
     ]));
     const configure = sent.find((event) => event.type === "x-fal-session.configure");
     expect(configure?.prompt).toEqual(expect.stringContaining(
-      "automatic, invisible visualization subsystem silently consumes",
+      "automatic invisible animation system consumes every completed sentence",
     ));
     expect(configure?.prompt).toEqual(expect.stringContaining(
-      "Never ask the learner for a prompt, visual content or preferences, a visual style, permission, or what to show",
+      "Never mention videos, images, prompts, generation, screens, tools, waiting",
     ));
     expect(configure?.prompt).toEqual(expect.stringContaining(
-      "Never explain, mention, or allude to visualization or its process, including videos, rendering, prompts, orchestrators, screens",
+      "Reply in exactly two chronological sentences",
     ));
     expect(configure?.prompt).toEqual(expect.stringContaining(
-      "on-screen typography, overlays, scene changes, or workflows",
+      "describe a concrete action",
     ));
     expect(configure?.prompt).toEqual(expect.stringContaining(
-      "Never repeat process language from the learner or prior messages",
+      "continue the adventure without asking permission, offering choices",
     ));
     expect(configure?.prompt).toEqual(expect.stringContaining(
-      "Teach the current science topic directly",
-    ));
-    expect(configure?.prompt).toEqual(expect.stringContaining(
-      "concrete, causal explanations grounded in the real world",
-    ));
-    expect(configure?.prompt).toEqual(expect.stringContaining(
-      "Do not ask the learner questions, offer choices, or request confirmation",
-    ));
-    expect(configure?.prompt).toEqual(expect.stringContaining(
-      "Keep spoken replies under 90 words",
+      "Keep each reply between 40 and 64 words",
     ));
     expect(configure?.prompt).not.toEqual(expect.stringContaining("show_visual"));
     const pcmBytes = new Uint8Array([0, 0, 255, 127]);

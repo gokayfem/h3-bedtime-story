@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { StreamingSubjectBuffer } from "./streaming-subjects";
 
 describe("StreamingSubjectBuffer", () => {
-  it("emits a stable subject before the tutor transcript finishes", () => {
+  it("waits for a complete sentence before emitting a stable subject", () => {
     const buffer = new StreamingSubjectBuffer();
 
     expect(
@@ -10,8 +10,10 @@ describe("StreamingSubjectBuffer", () => {
         "turn-1",
         "Heat moves through metal as particles collide ",
       ),
-    ).toEqual(["Heat moves through metal as particles collide"]);
-    expect(buffer.pushDelta("turn-1", "and transfer energy ")).toEqual([]);
+    ).toEqual([]);
+    expect(buffer.pushDelta("turn-1", "and transfer energy. ")).toEqual([
+      "Heat moves through metal as particles collide and transfer energy",
+    ]);
   });
 
   it("preserves spoken decimals when recognizing sentence boundaries", () => {
@@ -52,13 +54,16 @@ describe("StreamingSubjectBuffer", () => {
         "turn-1",
         "Heat moves through metal as particles collide ",
       ),
-    ).toEqual(["Heat moves through metal as particles collide"]);
+    ).toEqual([]);
     expect(
       buffer.finish("turn-1", fullText, false),
-    ).toEqual(["and transfer energy", "It spreads outward"]);
+    ).toEqual([
+      "Heat moves through metal as particles collide and transfer energy",
+      "It spreads outward",
+    ]);
   });
 
-  it("drops an interrupted remainder and bounds each tutor turn to six clips", () => {
+  it("drops an interrupted remainder and bounds each tutor turn to two clips", () => {
     const buffer = new StreamingSubjectBuffer();
     const emitted = Array.from({ length: 8 }, (_, index) =>
       buffer.pushDelta(
@@ -67,7 +72,7 @@ describe("StreamingSubjectBuffer", () => {
       ),
     ).flat();
 
-    expect(emitted).toHaveLength(6);
+    expect(emitted).toHaveLength(2);
     expect(buffer.finish("turn-1", "unfinished explanation", true)).toEqual([]);
   });
 });

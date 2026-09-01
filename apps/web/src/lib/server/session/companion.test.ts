@@ -107,7 +107,7 @@ describe("createCompanionTurn", () => {
     );
 
     const request = provider.generate.mock.calls[0]?.[0];
-    expect(request.instructions).toMatch(/Adapt vocabulary, examples, pace, and mathematical depth/i);
+    expect(request.instructions).toMatch(/exactly two chronological sentences/i);
     expect(request.instructions).toMatch(/Never quote hidden memory/i);
     expect(request.learnerContext).toContain("Age band: 13-15");
     expect(request.learnerContext).toContain("Preferred explanation mode: mathematical");
@@ -149,13 +149,10 @@ describe("createCompanionTurn", () => {
       { turnNumber: 1, cardIdNamespace: "session-local:command-local:1", ageBand: "16-18" },
     );
 
-    expect(result.discipline).toBe("astronomy");
-    expect(result.reply).toMatch(/falling toward Earth|sideways/i);
-    expect(result.toolCalls).toContainEqual(expect.objectContaining({
-      name: "show_visual",
-      arguments: expect.objectContaining({ continuityKey: "physics-orbits" }),
-    }));
-    expect(result.cards.cards).toHaveLength(3);
+    expect(result.discipline).toBe("general-science");
+    expect(result.reply).toMatch(/Niko|Moss/i);
+    expect(result.toolCalls.some((call) => call.name === "show_visual")).toBe(false);
+    expect(result.cards.cards).toHaveLength(2);
   });
 
   it("keeps local fallback speech focused on science rather than implementation", async () => {
@@ -166,7 +163,8 @@ describe("createCompanionTurn", () => {
       { turnNumber: 1, cardIdNamespace: "session-local:command-local:2", ageBand: "16-18" },
     );
 
-    expect(result.reply).toMatch(/observ|predict|evidence/i);
+    expect(result.reply.split(/[.!](?:\s|$)/u).filter(Boolean)).toHaveLength(2);
+    expect(result.reply).not.toContain("?");
     expect(result.reply).not.toMatch(/local|pipeline|OpenAI|visual/i);
   });
 
@@ -245,7 +243,7 @@ describe("createCompanionTurn", () => {
         continuityKey: "wave-rope",
       },
     };
-    const stopVisual = { name: "stop_visual", arguments: { reason: "topic_changed" } };
+    const stopVisual = { name: "stop_visual", arguments: { reason: "user_requested" } };
     const candidates = [
       [...base.toolCalls, ...base.toolCalls],
       [...base.toolCalls, showVisual, stopVisual],

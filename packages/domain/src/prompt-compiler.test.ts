@@ -4,7 +4,7 @@ import { H3PromptCompiler, UnsafeVisualPromptError } from "./prompt-compiler";
 const compiler = new H3PromptCompiler();
 
 describe("H3PromptCompiler", () => {
-  it("returns only the permanent style and normalized latest speech subject", () => {
+  it("compiles a normalized story beat with a stable ending", () => {
     const prompt = compiler.compile({
       concept: "cell division",
       teachingIntent: "show phase order",
@@ -14,15 +14,26 @@ describe("H3PromptCompiler", () => {
       continuityKey: "mitosis",
     });
 
-    expect(prompt).toContain("premium mixed 2D illustrated motion language");
+    expect(prompt).toContain("premium hand-drawn 2D storybook cel animation");
     expect(prompt).toContain(
-      "Scientific subject: A cell membrane pinches inward as duplicated material separates into two cells.",
+      "ACTION: A cell membrane pinches inward as duplicated material separates into two cells.",
     );
-    expect(prompt).toContain("fresh, exactly 5-second, 16:9 scientific animation");
-    expect(prompt.length).toBeLessThan(2_000);
-    expect(prompt).not.toContain("REAL WORLD");
-    expect(prompt).not.toContain("HOW IT WORKS");
-    expect(prompt).not.toContain("0.00");
+    expect(prompt).toContain("Create exactly 5 seconds in 16:9");
+    expect(prompt).toContain("stable two-second ending pose");
+    expect(prompt.length).toBeLessThan(4_000);
+  });
+
+  it("uses the H3 image-conditioned continuation opening when a frame exists", () => {
+    const prompt = compiler.compile({
+      concept: "moon-key",
+      teachingIntent: "continue the quest",
+      visualDescription: "Niko swings while Moss opens the root-door",
+      durationSeconds: 15,
+      continuityKey: "niko-moss",
+    }, { conditioned: true });
+    expect(prompt).toContain("at 0.00 seconds");
+    expect(prompt).toContain("<Picture 1>");
+    expect(prompt).toContain("do not reset the scene");
   });
 
   it.each([

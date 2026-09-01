@@ -8,7 +8,7 @@ import { activeLessonStateSchema } from "@/lib/server/session/schemas";
 import { parseJsonBody, sessionApiErrorResponse } from "@/lib/server/session/http";
 const requestSchema = z.strictObject({
   sessionId: z.uuid(),
-  durationSeconds: z.literal(5),
+  durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]),
 });
 
 const VISUAL_LEASE_SECONDS = 180;

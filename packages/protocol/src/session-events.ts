@@ -70,7 +70,7 @@ export const sessionEventSchema = z.discriminatedUnion("type", [
     ...eventEnvelope,
     type: z.literal("visual.stop"),
     revision: revisionSchema,
-    reason: z.enum(["complete", "interrupted", "topic_changed", "budget", "failed"])
+    reason: z.enum(["user_requested", "complete", "interrupted", "topic_changed", "budget", "failed"])
   }),
   z.strictObject({
     ...eventEnvelope,

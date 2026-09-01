@@ -33,8 +33,8 @@ export function LessonView({ session, videoRef, videoReady, textFor }: LessonVie
     <div className={styles.shell}>
       <header className={styles.topbar}>
         <h1 className={styles.brand}>
-          <span className={styles.brandName}>H3 Max Realtime Education</span>
-          <span className={styles.brandTag}>science companion</span>
+          <span className={styles.brandName}>Storytime</span>
+          <span className={styles.brandTag}>a story you can steer</span>
         </h1>
         <div className={styles.topbarActions}>
           <StatusBar
@@ -57,7 +57,7 @@ export function LessonView({ session, videoRef, videoReady, textFor }: LessonVie
         </div>
       </header>
 
-      <main className={styles.stage} id="main" aria-label="Lesson">
+      <main className={styles.stage} id="main" aria-label="Story">
         <ScienceCanvas
           visual={session.visual}
           videoRef={videoRef}
@@ -76,10 +76,10 @@ export function LessonView({ session, videoRef, videoReady, textFor }: LessonVie
         <footer className={styles.composerCol}>
           <div className={styles.endedBanner} role="status">
             <p className={styles.endedText}>
-              Session ended. Your learning is saved for the next session.
+              The story is tucked safely away for next time.
             </p>
             <Link className={styles.endedLink} href="/learn">
-              Start a new session
+              Start a new story
             </Link>
           </div>
         </footer>
@@ -90,6 +90,7 @@ export function LessonView({ session, videoRef, videoReady, textFor }: LessonVie
           micAvailable={session.micAvailable}
           onToggleMic={session.toggleMic}
           onInterrupt={session.interrupt}
+          onSendText={session.sendText}
         />
       )}
     </div>

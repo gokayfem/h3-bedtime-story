@@ -65,7 +65,7 @@ describe("OpenAiRealtimeSideband", () => {
     };
     expect(update.type).toBe("session.update");
     expect(update.session?.instructions).toBe(buildTutorInstructions("Prefers visual examples."));
-    expect(update.session?.instructions).toContain("Age adaptation and pedagogy:");
+    expect(update.session?.instructions).toContain("Story canon and rhythm:");
     expect(update.session?.instructions).toContain("Safety:");
     expect(update.session?.instructions).toContain("Conversation and tool rules:");
     expect(update.session?.instructions).toContain("Learner memory:");
@@ -111,11 +111,11 @@ describe("OpenAiRealtimeSideband", () => {
       response_id: "response-current",
       call_id: "tool",
       name: "stop_visual",
-      arguments: JSON.stringify({ reason: "complete" })
+      arguments: JSON.stringify({ reason: "user_requested" })
     })), false);
     await vi.waitFor(() => expect(handlers.onToolCall).toHaveBeenCalledWith(
       "tool",
-      { name: "stop_visual", arguments: { reason: "complete" } },
+      { name: "stop_visual", arguments: { reason: "user_requested" } },
       "response-current",
     ));
     expect(socket.sent.join("\n")).toContain("function_call_output");
@@ -130,7 +130,7 @@ describe("OpenAiRealtimeSideband", () => {
       response_id: "response-canceled",
       call_id: "late-tool",
       name: "stop_visual",
-      arguments: JSON.stringify({ reason: "complete" })
+      arguments: JSON.stringify({ reason: "user_requested" })
     })), false);
     expect(handlers.onToolCall).toHaveBeenCalledTimes(1);
 

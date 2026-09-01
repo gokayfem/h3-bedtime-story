@@ -106,7 +106,7 @@ describe("LearnClient refresh recovery", () => {
 
     render(<LearnClient learnerId={LEARNER_ID} />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Preparing your science companion");
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing your story world");
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledWith("/api/session", expect.objectContaining({
       method: "POST",

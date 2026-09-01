@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   FalVideoDirector,
   type QueuedVideoGenerator,
+  type VideoFinalFrameExtractor,
   type VisualAuthorization,
 } from "./falVideoDirector";
 
@@ -25,7 +26,10 @@ function authorization(sequence: number): VisualAuthorization {
   };
 }
 
-function createDirector(generateVideo: QueuedVideoGenerator) {
+function createDirector(
+  generateVideo: QueuedVideoGenerator,
+  extractFinalFrame: VideoFinalFrameExtractor = async () => undefined,
+) {
   let sequence = 0;
   const handoffQueuedVideo = vi.fn(async (
     video: HTMLVideoElement,
@@ -38,6 +42,7 @@ function createDirector(generateVideo: QueuedVideoGenerator) {
     releaseAuthorization: async () => ({ remainingSeconds: 120, dailyLimitSeconds: 120 }),
     generateVideo,
     handoffQueuedVideo,
+    extractFinalFrame,
   });
   return { director, handoffQueuedVideo };
 }
@@ -68,6 +73,28 @@ describe("FalVideoDirector", () => {
       remainingSeconds: 115,
       dailyLimitSeconds: 120,
     });
+    expect(video.loop).toBe(false);
+  });
+
+  it("holds the final frame instead of replaying a completed beat", async () => {
+    const generateVideo = vi.fn(async () => ({
+      videoUrl: "https://v3.fal.media/files/story-beat.mp4",
+      remainingSeconds: 110,
+      dailyLimitSeconds: 120,
+    }));
+    const { director } = createDirector(generateVideo);
+    const video = document.createElement("video");
+    const play = vi.spyOn(video, "play").mockResolvedValue();
+    const pause = vi.spyOn(video, "pause").mockImplementation(() => undefined);
+    director.attachVideoElement(video);
+    await director.start(SPEC, 1);
+    play.mockClear();
+
+    video.dispatchEvent(new Event("ended"));
+
+    expect(video.loop).toBe(false);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(play).not.toHaveBeenCalled();
   });
 
   it("keeps the current clip visible while the next queued video generates", async () => {
@@ -86,6 +113,7 @@ describe("FalVideoDirector", () => {
     const { director, handoffQueuedVideo } = createDirector(generateVideo);
     const video = document.createElement("video");
     vi.spyOn(video, "play").mockResolvedValue();
+    vi.spyOn(video, "pause").mockImplementation(() => undefined);
     director.attachVideoElement(video);
     await director.start(SPEC, 1);
 
@@ -109,6 +137,67 @@ describe("FalVideoDirector", () => {
     ));
   });
 
+  it("conditions an automatic continuation on the prior generated final frame", async () => {
+    const finalFrame = "data:image/jpeg;base64,/9j/continuation==";
+    const generateVideo = vi.fn(async (_authorization, _prompt, _signal, imageUrl?: string) => ({
+      videoUrl: imageUrl
+        ? "https://v3.fal.media/files/continued.mp4"
+        : "https://v3.fal.media/files/opening.mp4",
+      remainingSeconds: imageUrl ? 100 : 110,
+      dailyLimitSeconds: 120,
+    }));
+    const extractFinalFrame = vi.fn(async () => finalFrame);
+    const { director } = createDirector(generateVideo, extractFinalFrame);
+
+    await director.start(SPEC, 1);
+    await director.start({ ...SPEC, visualDescription: "Moss opens the root-door" }, 2);
+
+    expect(extractFinalFrame).toHaveBeenCalledWith(
+      "https://v3.fal.media/files/opening.mp4",
+      expect.any(AbortSignal),
+    );
+    expect(generateVideo.mock.calls[1]?.[3]).toBe(finalFrame);
+    expect(generateVideo.mock.calls[1]?.[1]).toContain("<Picture 1>");
+  });
+
+  it("starts a continuation immediately when it becomes ready after the prior beat ended", async () => {
+    const nextGeneration = Promise.withResolvers<{
+      videoUrl: string;
+      remainingSeconds: number;
+      dailyLimitSeconds: number;
+    }>();
+    const generateVideo = vi.fn()
+      .mockResolvedValueOnce({
+        videoUrl: "https://v3.fal.media/files/current.mp4",
+        remainingSeconds: 115,
+        dailyLimitSeconds: 120,
+      })
+      .mockImplementationOnce(() => nextGeneration.promise);
+    const { director, handoffQueuedVideo } = createDirector(generateVideo);
+    const video = document.createElement("video");
+    vi.spyOn(video, "play").mockResolvedValue();
+    vi.spyOn(video, "pause").mockImplementation(() => undefined);
+    director.attachVideoElement(video);
+    await director.start(SPEC, 1);
+
+    const next = director.start({ ...SPEC, visualDescription: "Open the root-door" }, 2);
+    await vi.waitFor(() => expect(generateVideo).toHaveBeenCalledTimes(2));
+    Object.defineProperty(video, "ended", { configurable: true, value: true });
+    video.dispatchEvent(new Event("ended"));
+
+    nextGeneration.resolve({
+      videoUrl: "https://v3.fal.media/files/continuation.mp4",
+      remainingSeconds: 110,
+      dailyLimitSeconds: 120,
+    });
+    await expect(next).resolves.toBe(true);
+    await vi.waitFor(() => expect(handoffQueuedVideo).toHaveBeenCalledWith(
+      video,
+      "https://v3.fal.media/files/continuation.mp4",
+      expect.any(AbortSignal),
+    ));
+  });
+
   it("preempts old prefetched clips when a replacement video becomes ready", async () => {
     const generateVideo = vi.fn()
       .mockResolvedValueOnce({ videoUrl: "https://v3.fal.media/files/current.mp4", remainingSeconds: 115, dailyLimitSeconds: 120 })
@@ -117,11 +206,16 @@ describe("FalVideoDirector", () => {
     const { director, handoffQueuedVideo } = createDirector(generateVideo);
     const video = document.createElement("video");
     vi.spyOn(video, "play").mockResolvedValue();
+    vi.spyOn(video, "pause").mockImplementation(() => undefined);
     director.attachVideoElement(video);
 
     await director.start(SPEC, 1);
     await director.start({ ...SPEC, visualDescription: "Old follow-up" }, 2);
-    await expect(director.replace({ ...SPEC, visualDescription: "New topic" }, 3)).resolves.toBe(true);
+    const replacement = director.replace({ ...SPEC, visualDescription: "New topic" }, 3);
+    await expect(replacement).resolves.toBe(true);
+    expect(generateVideo).toHaveBeenCalledTimes(3);
+    expect(handoffQueuedVideo).not.toHaveBeenCalled();
+    video.dispatchEvent(new Event("ended"));
 
     await vi.waitFor(() => expect(handoffQueuedVideo).toHaveBeenCalledWith(
       video,
@@ -133,6 +227,47 @@ describe("FalVideoDirector", () => {
       "https://v3.fal.media/files/stale.mp4",
       expect.anything(),
     );
+  });
+
+  it("generates a guided replacement while the visible clip finishes, then hands it off", async () => {
+    const generateVideo = vi.fn()
+      .mockResolvedValueOnce({
+        videoUrl: "https://v3.fal.media/files/current.mp4",
+        remainingSeconds: 115,
+        dailyLimitSeconds: 120,
+      })
+      .mockResolvedValueOnce({
+        videoUrl: "https://v3.fal.media/files/guided.mp4",
+        remainingSeconds: 100,
+        dailyLimitSeconds: 120,
+      });
+    const { director, handoffQueuedVideo } = createDirector(
+      generateVideo,
+      async (videoUrl) => videoUrl.includes("current")
+        ? "data:image/jpeg;base64,/9j/current=="
+        : undefined,
+    );
+    const video = document.createElement("video");
+    vi.spyOn(video, "play").mockResolvedValue();
+    vi.spyOn(video, "pause").mockImplementation(() => undefined);
+    director.attachVideoElement(video);
+    await director.start(SPEC, 1);
+
+    const replacement = director.replace(
+      { ...SPEC, durationSeconds: 15, visualDescription: "Follow the child's new moon-door instruction" },
+      2,
+    );
+    await expect(replacement).resolves.toBe(true);
+    expect(generateVideo).toHaveBeenCalledTimes(2);
+    expect(generateVideo.mock.calls[1]?.[3]).toBe("data:image/jpeg;base64,/9j/current==");
+    expect(handoffQueuedVideo).not.toHaveBeenCalled();
+
+    video.dispatchEvent(new Event("ended"));
+    await vi.waitFor(() => expect(handoffQueuedVideo).toHaveBeenCalledWith(
+      video,
+      "https://v3.fal.media/files/guided.mp4",
+      expect.any(AbortSignal),
+    ));
   });
 
   it("keeps the current clip playing when a later generation fails", async () => {
@@ -184,6 +319,7 @@ describe("FalVideoDirector", () => {
         dailyLimitSeconds: 120,
       }),
       handoffQueuedVideo: async () => undefined,
+      extractFinalFrame: async () => undefined,
       onGenerationAccepted,
       now: () => now += 10,
     });

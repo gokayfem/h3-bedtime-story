@@ -53,7 +53,6 @@ interface SessionRecord {
   currentAssistantText: string;
   readonly interruptedTurns: Set<string>;
   activeCommandEvents?: SessionEvent[];
-  visualCompletionTimer?: NodeJS.Timeout;
   closePromise?: Promise<void>;
   closing: boolean;
   activeVisual?: {
@@ -741,23 +740,6 @@ export class GatewaySessionManager {
       await this.persistState(session);
       await this.emit(session, clearCards);
     }
-    if (session.canvas.snapshot.visual.spec) {
-      if (session.visualCompletionTimer) {
-        clearTimeout(session.visualCompletionTimer);
-        session.visualCompletionTimer = undefined;
-      }
-      session.eventRevision = await this.bus.nextEventRevision(session.id, session.eventRevision);
-      const stopVisual: SessionEvent = {
-        protocolVersion: 1,
-        type: "visual.stop",
-        revision: session.eventRevision,
-        reason: "interrupted"
-      };
-      session.canvas.apply(stopVisual);
-      await this.persistState(session);
-      await this.emit(session, stopVisual);
-      await this.persistVisualOutcome(session, "interrupted");
-    }
     session.currentAssistantTurn = undefined;
     session.currentAssistantText = "";
     this.metrics.recordInterruptionAcknowledgement("control", "ok");
@@ -802,8 +784,6 @@ export class GatewaySessionManager {
                 visualOperationId,
                 spec: call.arguments
               };
-          clearTimeout(session.visualCompletionTimer);
-          session.visualCompletionTimer = undefined;
           const activeVisual: NonNullable<SessionRecord["activeVisual"]> = {
             id: visualOperationId,
             concept: call.arguments.concept,
@@ -867,17 +847,12 @@ export class GatewaySessionManager {
           return { accepted: true, revision: session.eventRevision };
         }
         case "stop_visual": {
-          clearTimeout(session.visualCompletionTimer);
-          session.visualCompletionTimer = undefined;
           session.eventRevision = await this.bus.nextEventRevision(session.id, session.eventRevision);
           const event: SessionEvent = { protocolVersion: 1, type: "visual.stop", revision: session.eventRevision, reason: call.arguments.reason };
           session.canvas.apply(event);
           await this.persistState(session);
           await this.emit(session, event);
-          await this.persistVisualOutcome(
-            session,
-            call.arguments.reason === "complete" ? "completed" : "interrupted"
-          );
+          await this.persistVisualOutcome(session, "interrupted");
           return { accepted: true, revision: session.eventRevision };
         }
         case "record_learning_evidence": {
@@ -921,28 +896,6 @@ export class GatewaySessionManager {
     }
   }
 
-  private async completeVisualIfCurrent(session: SessionRecord, visualRevision: number): Promise<void> {
-    const active = session.activeVisual;
-    if (
-      session.closing
-      || !active
-      || active.promptVersion !== visualRevision
-      || active.status !== "ready"
-    ) return;
-    session.eventRevision = await this.bus.nextEventRevision(session.id, session.eventRevision);
-    const event: SessionEvent = {
-      protocolVersion: 1,
-      type: "visual.stop",
-      revision: session.eventRevision,
-      reason: "complete"
-    };
-    session.canvas.apply(event);
-    await this.persistState(session);
-    await this.emit(session, event);
-    session.visualCompletionTimer = undefined;
-    await this.persistVisualOutcome(session, "completed");
-  }
-
   private persistState(session: SessionRecord): Promise<void> {
     return this.bus.persistSessionState(session.id, {
       eventRevision: session.eventRevision,
@@ -974,8 +927,6 @@ export class GatewaySessionManager {
       this.metrics.recordCleanup("provider", "error");
     }
     session.sideband = undefined;
-    clearTimeout(session.visualCompletionTimer);
-    session.visualCompletionTimer = undefined;
     await this.persistVisualOutcome(session, "interrupted");
     await this.setState(session, "ended").catch(() => undefined);
     for (const socket of session.sockets) socket.close(1000, "gateway session ended");
@@ -1033,8 +984,6 @@ export class GatewaySessionManager {
     }
     if (command.type === "visual.failed") {
       clearTimeout(active.authorizationTimer);
-      clearTimeout(session.visualCompletionTimer);
-      session.visualCompletionTimer = undefined;
       active.status = "failed";
       const isStaticFallback = command.reason === "reduced_motion";
       active.resolveAuthorization(isStaticFallback
@@ -1064,10 +1013,6 @@ export class GatewaySessionManager {
     }
     active.status = "ready";
     this.metrics.recordVisual("readiness", "ok");
-    session.visualCompletionTimer = setTimeout(() => {
-      void this.completeVisualIfCurrent(session, active.promptVersion);
-    }, active.durationSeconds * 1_000);
-    session.visualCompletionTimer.unref();
   }
 
   private async persistVisualOutcome(
@@ -1139,7 +1084,6 @@ export class GatewaySessionManager {
   private async discardCreatedSession(session: SessionRecord): Promise<void> {
     session.closing = true;
     session.providerReady = false;
-    clearTimeout(session.visualCompletionTimer);
     await session.sideband?.close().catch(() => undefined);
     session.unsubscribe();
     if (this.sessions.get(session.id) === session) this.sessions.delete(session.id);

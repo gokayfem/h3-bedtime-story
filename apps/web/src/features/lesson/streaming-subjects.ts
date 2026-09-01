@@ -1,4 +1,4 @@
-const MAX_CLIPS_PER_TURN = 6;
+const MAX_CLIPS_PER_TURN = 2;
 const MAX_SUBJECT_CHARS = 160;
 const MIN_LIVE_CHARS = 24;
 const MIN_LIVE_WORDS = 6;
@@ -71,19 +71,7 @@ export class StreamingSubjectBuffer {
 
       const boundary = SENTENCE_BOUNDARY.exec(content);
       let end = boundary ? boundary.index + 1 : -1;
-      if (end < 0 && !final) {
-        const lastWhitespace = content.search(/\s+$/u) >= 0
-          ? content.length
-          : content.lastIndexOf(" ") + 1;
-        const candidate = normalizeSubject(content.slice(0, lastWhitespace));
-        if (
-          candidate.length < MIN_LIVE_CHARS
-          || wordCount(candidate) < MIN_LIVE_WORDS
-        ) {
-          break;
-        }
-        end = lastWhitespace;
-      }
+      if (end < 0 && !final) break;
       if (end < 0 && final) end = content.length;
       if (end < 0) break;
 
@@ -91,7 +79,7 @@ export class StreamingSubjectBuffer {
       const subject = normalizeSubject(content.slice(0, end));
       this.#consumed += leadingWhitespace + end;
       if (!subject) continue;
-      if (!final && !boundary && wordCount(subject) < MIN_LIVE_WORDS) break;
+      if (!final && wordCount(subject) < MIN_LIVE_WORDS) continue;
       subjects.push(subject);
       this.#emitted += 1;
     }

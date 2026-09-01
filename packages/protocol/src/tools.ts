@@ -2,13 +2,13 @@ import { z } from "zod";
 import { cardPurposeSchema } from "./cards";
 import { nonBlankStringSchema } from "./strings";
 
-export const visualDurationSchema = z.literal(5);
+export const visualDurationSchema = z.union([z.literal(5), z.literal(10), z.literal(15)]);
 
 export const visualSpecSchema = z.strictObject({
   concept: nonBlankStringSchema(160),
   teachingIntent: nonBlankStringSchema(500),
   visualDescription: nonBlankStringSchema(2_000),
-  durationSeconds: visualDurationSchema.default(5),
+  durationSeconds: visualDurationSchema.default(15),
   continuityKey: nonBlankStringSchema(120)
 });
 
@@ -43,7 +43,7 @@ export const recordLearningEvidenceArgumentsSchema = z.strictObject({
 });
 
 export const stopVisualArgumentsSchema = z.strictObject({
-  reason: z.enum(["complete", "interrupted", "topic_changed", "budget"])
+  reason: z.literal("user_requested")
 });
 
 export const tutorToolCallSchema = z.discriminatedUnion("name", [

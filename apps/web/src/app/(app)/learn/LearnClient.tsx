@@ -123,7 +123,7 @@ export function LearnLoadingShell() {
       aria-busy="true"
     >
       <p role="status" className="text-sm font-medium tracking-wide text-slate-300">
-        Preparing your science companion…
+        Preparing your story world…
       </p>
     </main>
   );

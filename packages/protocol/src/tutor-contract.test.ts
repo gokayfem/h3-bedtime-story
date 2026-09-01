@@ -17,11 +17,14 @@ describe("tutor instruction boundaries", () => {
     const instructions = buildTutorInstructions();
 
     expect(instructions).toContain("Visual support is automatic and invisible");
-    expect(instructions).toContain("never ask the learner what to visualize");
-    expect(instructions).toContain("Never mention or repeat the hidden visual process in speech");
-    expect(instructions).toContain("keep every spoken sentence focused on the science topic");
-    expect(instructions).toContain("Do not ask the learner questions");
-    expect(instructions).toContain("Do not use present_cards unless the learner explicitly requests");
+    expect(instructions).toContain("Never mention videos, animations, rendering, prompts");
+    expect(instructions).toContain("five-second opening clip");
+    expect(instructions).toContain("uninterrupted ten-second continuations");
+    expect(instructions).toContain("Reply with exactly two chronological sentences");
+    expect(instructions).toContain("do not call show_visual or stop_visual");
+    expect(instructions).toContain("reason user_requested only");
+    expect(instructions).toContain("without asking permission, offering choices");
+    expect(instructions).toContain("do not end with a question");
   });
 
   it("labels and inertly encodes learner memory for a lower-priority message", () => {

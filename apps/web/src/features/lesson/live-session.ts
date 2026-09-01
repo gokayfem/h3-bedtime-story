@@ -171,9 +171,6 @@ export function reduceLiveLesson(
     return {
       ...state,
       activeCards: null,
-      visual: state.visual
-        ? { ...state.visual, phase: "held", stopReason: "interrupted" }
-        : null,
       turns: state.activeTurn
         ? [...state.turns, { ...state.activeTurn, interrupted: true, final: true }]
         : state.turns,
@@ -224,9 +221,6 @@ export function reduceLiveLesson(
     return {
       ...state,
       activeCards: action.interrupted ? null : state.activeCards,
-      visual: action.interrupted && state.visual
-        ? { ...state.visual, phase: "held", stopReason: "interrupted" }
-        : state.visual,
       turns,
       activeTurn: state.activeTurn?.turnId === action.turnId
         ? null
@@ -288,6 +282,9 @@ export function reduceSessionEvent(
 
     case "visual.stop": {
       if (!shouldApplyRevisionedEvent(state.revision, event) || !state.visual) return state;
+      if (!["user_requested", "budget", "failed"].includes(event.reason)) {
+        return { ...state, revision: event.revision };
+      }
       return {
         ...state,
         revision: event.revision,

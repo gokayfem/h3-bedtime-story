@@ -36,7 +36,6 @@ vi.mock("@/hooks/useVisualDirector", () => ({
     redirect: vi.fn(),
     canGenerate: vi.fn(() => false),
     stop: vi.fn(),
-    continuePlaybackUntilReplacement: vi.fn(),
   }),
 }));
 

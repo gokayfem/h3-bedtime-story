@@ -32,7 +32,6 @@ const mocks = vi.hoisted(() => {
     redirect: vi.fn(() => true),
     canAcceptGeneration: vi.fn(() => true),
     stop: vi.fn(async () => undefined),
-    continuePlaybackUntilReplacement: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
   };
   const metrics = {
@@ -171,15 +170,6 @@ describe("useVisualDirector", () => {
 
     expect(mocks.director.replace).toHaveBeenCalledWith(spec, 1);
     expect(mocks.director.start).not.toHaveBeenCalled();
-  });
-
-  it("cancels stale generation without stopping the playing video", async () => {
-    const { result } = renderHook(() => useVisualDirector());
-
-    await act(() => result.current.continuePlaybackUntilReplacement());
-
-    expect(mocks.director.continuePlaybackUntilReplacement).toHaveBeenCalledOnce();
-    expect(mocks.director.stop).not.toHaveBeenCalled();
   });
 
   it("keeps requested revisions pending until the director reports them applied", async () => {

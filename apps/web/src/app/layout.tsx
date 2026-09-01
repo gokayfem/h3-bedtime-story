@@ -39,11 +39,11 @@ const nunito = Nunito({
 
 export const metadata: Metadata = {
   title: {
-    default: "H3 Max Realtime Education — an interactive science companion",
-    template: "%s · H3 Max Realtime Education",
+    default: "Storytime — a story you can steer",
+    template: "%s · Storytime",
   },
   description:
-    "A conversational science companion for learners aged 13–18. Ask questions out loud, interrupt at any time, and explore physics, chemistry, biology, astronomy, earth and environmental science with live visuals.",
+    "A live, child-friendly adventure that changes when you speak. Guide Niko and Moss through a continuous animated story world.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

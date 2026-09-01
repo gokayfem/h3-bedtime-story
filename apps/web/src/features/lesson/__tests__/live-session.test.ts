@@ -165,7 +165,7 @@ describe("live session reducer", () => {
     expect(interrupted.turns[0]).toMatchObject({ interrupted: true, final: true });
   });
 
-  it("clears cards while holding the current visual on learner interruption", () => {
+  it("clears cards without changing the current visual on learner interruption", () => {
     const withCardsAndVisual = reduceSessionEvent(
       reduceSessionEvent(INITIAL_LIVE_STATE, {
         protocolVersion: 1,
@@ -180,11 +180,27 @@ describe("live session reducer", () => {
     const interrupted = reduceLiveLesson(withCardsAndVisual, { type: "learner.interrupt" });
 
     expect(interrupted.activeCards).toBeNull();
-    expect(interrupted.visual).toEqual({
-      ...withCardsAndVisual.visual,
-      phase: "held",
-      stopReason: "interrupted",
+    expect(interrupted.visual).toEqual(withCardsAndVisual.visual);
+  });
+
+  it("finalizes interrupted speech without changing the current visual", () => {
+    const withVisual = reduceSessionEvent(INITIAL_LIVE_STATE, {
+      protocolVersion: 1,
+      type: "visual.start",
+      revision: 1,
+      visualOperationId: "visual-op-1",
+      spec,
     });
+
+    const interrupted = reduceLiveLesson(withVisual, {
+      protocolVersion: 1,
+      type: "transcript.final",
+      turnId: "tutor-1",
+      text: "Niko opens the root-door—",
+      interrupted: true,
+    });
+
+    expect(interrupted.visual).toEqual(withVisual.visual);
   });
 
 
@@ -332,7 +348,7 @@ describe("live session reducer", () => {
     expect(shouldApplyRevisionedEvent(2, stale)).toBe(true);
   });
 
-  it("visual.stop holds the frame with its reason", () => {
+  it("a learner-requested visual.stop holds the frame with its reason", () => {
     let s = reduceSessionEvent(INITIAL_LIVE_STATE, {
       protocolVersion: 1,
       type: "visual.start",
@@ -340,10 +356,28 @@ describe("live session reducer", () => {
       visualOperationId: "visual-op-1",
       spec,
     });
-    s = reduceSessionEvent(s, { protocolVersion: 1, type: "visual.stop", revision: 2, reason: "interrupted" });
+    s = reduceSessionEvent(s, { protocolVersion: 1, type: "visual.stop", revision: 2, reason: "user_requested" });
     expect(s.visual?.phase).toBe("held");
-    expect(s.visual?.stopReason).toBe("interrupted");
+    expect(s.visual?.stopReason).toBe("user_requested");
   });
+
+  it.each(["complete", "interrupted", "topic_changed"] as const)(
+    "does not hold the visual for an implicit %s stop event",
+    (reason) => {
+      let s = reduceSessionEvent(INITIAL_LIVE_STATE, {
+        protocolVersion: 1,
+        type: "visual.start",
+        revision: 1,
+        visualOperationId: "visual-op-1",
+        spec,
+      });
+
+      s = reduceSessionEvent(s, { protocolVersion: 1, type: "visual.stop", revision: 2, reason });
+
+      expect(s.visual?.phase).toBe("live");
+      expect(s.revision).toBe(2);
+    },
+  );
 
   it("learning.progress replaces the mastery view", () => {
     const s = reduceSessionEvent(INITIAL_LIVE_STATE, {

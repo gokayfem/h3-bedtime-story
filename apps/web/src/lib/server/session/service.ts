@@ -237,7 +237,7 @@ export class SessionService {
     const createMutationId = opaqueScope("create-mutation", `${learner.learnerId}:${input.idempotencyKey}`);
     const proposedSessionId = stableSessionId(`${learner.learnerId}:${input.idempotencyKey}`);
     const now = this.now().toISOString();
-    const initialEvent: SessionEvent = { protocolVersion: 1, type: "session.status", state: "text_only", detail: "Voice is optional; type any science question to begin." };
+    const initialEvent: SessionEvent = { protocolVersion: 1, type: "session.status", state: "text_only", detail: "Voice is optional; type what Niko and Moss should do first." };
     const learnerProfile = await this.dependencies.memory.loadLearnerProfile(learner.learnerId);
     const proposedState: ActiveLessonState = {
       revision: 0,

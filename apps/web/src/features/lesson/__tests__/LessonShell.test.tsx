@@ -48,7 +48,7 @@ describe("LessonView session truth", () => {
   it("describes saved learning without promising a nonexistent profile view", () => {
     render(<LessonView session={lessonSession({ status: "ended" })} />);
 
-    expect(screen.getByText("Session ended. Your learning is saved for the next session.")).toBeInTheDocument();
+    expect(screen.getByText("The story is tucked safely away for next time.")).toBeInTheDocument();
     expect(screen.queryByText(/saved to your profile/i)).not.toBeInTheDocument();
   });
 });

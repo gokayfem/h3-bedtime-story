@@ -11,24 +11,32 @@ import { getPersistenceServicesFromEnv } from "@/lib/server/session/runtime";
 export const runtime = "nodejs";
 export const maxDuration = 180;
 
-const MODEL = "minimax/h3-max/text-to-video";
+const TEXT_MODEL = "minimax/h3-max/text-to-video";
+const IMAGE_MODEL = "minimax/h3-max/image-to-video";
 const PRIVATE_NO_STORE_HEADERS = { "Cache-Control": "no-store, private" };
 const inputSchema = z.strictObject({
   sessionId: z.uuid(),
   reservationId: z.uuid(),
-  durationSeconds: z.literal(5),
-  prompt: z.string().trim().min(20).max(2_000).refine(
+  durationSeconds: z.union([z.literal(5), z.literal(10), z.literal(15)]),
+  prompt: z.string().trim().min(20).max(4_000).refine(
     (value) => value.startsWith(PERMANENT_VIDEO_STYLE),
     "The permanent video style is required.",
   ),
+  imageUrl: z.string().max(750_000).regex(/^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/]+=*$/u).optional(),
 });
 const activeStateSchema = z.object({
   learnerId: z.string().min(1),
   status: z.string().min(1),
 }).passthrough();
+const videoSourceSchema = z.string().refine(
+  (value) =>
+    value.startsWith("https://")
+    || /^data:video\/mp4;base64,[A-Za-z0-9+/]+=*$/u.test(value),
+  "A secure video source is required.",
+);
 const providerOutputSchema = z.object({
   video: z.object({
-    url: z.url().refine((value) => value.startsWith("https://")),
+    url: videoSourceSchema,
   }).passthrough(),
 }).passthrough();
 
@@ -51,7 +59,7 @@ export async function POST(request: Request): Promise<Response> {
   let release: (() => Promise<void>) | null = null;
   try {
     const learner = await requireMutationSession(request);
-    const input = await parseJsonBody(request, inputSchema, 24_576);
+    const input = await parseJsonBody(request, inputSchema, 800_000);
     const falKey = process.env.FAL_KEY?.trim();
     if (!falKey || !isFalFeatureEnabled(process.env, "FAL_QUEUE_ENABLED")) {
       return unavailable(503);
@@ -94,14 +102,16 @@ export async function POST(request: Request): Promise<Response> {
     try {
       const client = createFalClient({ credentials: falKey });
       const productionPrompt = input.prompt;
-      const result = await client.subscribe(MODEL, {
+      const model = input.imageUrl ? IMAGE_MODEL : TEXT_MODEL;
+      const result = await client.subscribe(model, {
         input: {
           prompt: productionPrompt,
           sync_mode: false,
           resolution: "480P",
-          duration: 5,
-          aspect_ratio: "16:9",
-          prompt_expansion_mode: "balanced",
+          duration: input.durationSeconds,
+          ...(input.imageUrl
+            ? { image_url: input.imageUrl, prompt_expansion_mode: "disabled" as const }
+            : { aspect_ratio: "16:9" as const, prompt_expansion_mode: "balanced" as const }),
           enable_safety_checker: true,
         },
         abortSignal: request.signal,
@@ -112,17 +122,20 @@ export async function POST(request: Request): Promise<Response> {
       await release();
       release = null;
       const remainingSeconds = await sessions.getVisualDailyRemaining(learner.learnerId, dailyLimitSeconds);
+      const responseHeaders: Record<string, string> = {
+        ...PRIVATE_NO_STORE_HEADERS,
+        "X-Axiom-Visual-Remaining": String(remainingSeconds),
+        "X-Axiom-Visual-Limit": String(dailyLimitSeconds),
+      };
+      if (output.video.url.startsWith("https://")) {
+        responseHeaders["X-Axiom-Video-Url"] = output.video.url;
+      }
       return Response.json({
         videoUrl: output.video.url,
         remainingSeconds,
         dailyLimitSeconds,
       }, {
-        headers: {
-          ...PRIVATE_NO_STORE_HEADERS,
-          "X-Axiom-Video-Url": output.video.url,
-          "X-Axiom-Visual-Remaining": String(remainingSeconds),
-          "X-Axiom-Visual-Limit": String(dailyLimitSeconds),
-        },
+        headers: responseHeaders,
       });
     } catch {
       if (release) await release();

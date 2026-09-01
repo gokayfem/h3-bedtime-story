@@ -24,17 +24,32 @@ export interface LiveLessonShellProps {
   backfillEvents?: SessionEvent[];
 }
 
-const CONTINUOUS_VIDEO_DURATION_SECONDS = 5 as const;
-const CONTINUOUS_VISUAL_PUMP_MS = 750;
+const STEADY_VIDEO_DURATION_SECONDS = 10 as const;
+const MAX_VISUAL_CLIPS_PER_TURN = 2 as const;
+const ROLLING_CONTINUATION_PUMP_MS = 750;
 
-function withContinuousVideoContract(spec: VisualSpec): VisualSpec {
-  return spec.durationSeconds === CONTINUOUS_VIDEO_DURATION_SECONDS
-    ? spec
-    : { ...spec, durationSeconds: CONTINUOUS_VIDEO_DURATION_SECONDS };
+const OPENING_VIDEO_DURATIONS = [5, 10] as const;
+
+interface VisualTurnProgress {
+  turnId: string | null;
+  clipCount: number;
+  lastSubject: string;
+  guidanceSubject: string;
+}
+
+interface RollingStoryState {
+  enabled: boolean;
+  guidanceSubject: string;
+  continuationIndex: number;
+}
+
+function durationForStoryClip(clipIndex: number): VisualSpec["durationSeconds"] {
+  return OPENING_VIDEO_DURATIONS[clipIndex] ?? STEADY_VIDEO_DURATION_SECONDS;
 }
 
 function visualFromSpokenResponse(
   text: string,
+  durationSeconds: VisualSpec["durationSeconds"],
   activeContinuityKey?: string,
 ): VisualSpec | null {
   const normalized = text.replace(/\s+/gu, " ").trim();
@@ -48,20 +63,23 @@ function visualFromSpokenResponse(
     return null;
   }
 
-  const subjectSummary = firstSentence.slice(0, 240);
-  const subjectKey = subjectSummary
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-|-$/gu, "")
-    .slice(0, 72);
-
+  const subjectSummary = firstSentence.slice(0, 500);
   return {
     concept: subjectSummary,
-    teachingIntent: `Explain ${subjectSummary}.`,
+    teachingIntent: "Continue the current story subject with a causal action and a stable handoff.",
     visualDescription: subjectSummary,
-    durationSeconds: CONTINUOUS_VIDEO_DURATION_SECONDS,
-    continuityKey: activeContinuityKey ?? `conversation-${subjectKey || "science"}`,
+    durationSeconds,
+    continuityKey: activeContinuityKey ?? "niko-moss-moonlit-forest",
   };
+}
+
+function automaticContinuationFrom(subject: string, continuationIndex: number): string {
+  const ending = subject
+    .replace(/[.!?]+$/u, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, 220);
+  return `Continue directly from the exact ending while pursuing the same guided goal established by ${ending}; in continuation beat ${continuationIndex}, Niko takes one decisive new action while Moss performs a different supporting action, the existing prop or obstacle visibly responds, and they reach a stable new discovery`;
 }
 
 /**
@@ -130,9 +148,20 @@ export function LiveLessonShell({
   });
   const learnerCounter = useRef(0);
   const streamingSubjectsRef = useRef(new StreamingSubjectBuffer());
-  const latestSpokenVisualRef = useRef<{ readonly text: string; readonly turnId: string } | null>(null);
   const lastVisualTurnIdRef = useRef<string | null>(null);
-  const replaceAfterInterruptionRef = useRef(false);
+  const visualTurnProgressRef = useRef<VisualTurnProgress>({
+    turnId: null,
+    clipCount: 0,
+    lastSubject: "",
+    guidanceSubject: "",
+  });
+  const rollingStoryRef = useRef<RollingStoryState>({
+    enabled: false,
+    guidanceSubject: "",
+    continuationIndex: 0,
+  });
+  const storyClipIndexRef = useRef(0);
+  const replaceAfterGuidanceRef = useRef(false);
   const [allowance, setAllowance] = useState(() => initialState?.visualAllowance ?? null);
   const pendingInterruptionAuditRef = useRef(false);
   const pendingVisualFailureRef = useRef(false);
@@ -156,7 +185,6 @@ export function LiveLessonShell({
     });
   }, [backfillEvents]);
   const startVisualSpec = useCallback((spec: VisualSpec, replacePlayback = false) => {
-    const continuousSpec = withContinuousVideoContract(spec);
     const revision = latestRevision.current + 1;
     const visualOperationId = `visual_${crypto.randomUUID()}`;
     const redirecting =
@@ -166,40 +194,101 @@ export function LiveLessonShell({
       type: redirecting ? "visual.redirect" : "visual.start",
       revision,
       visualOperationId,
-      spec: continuousSpec,
+      spec,
     };
     dispatch(visualEvent);
     latestRevision.current = revision;
     activeVisualRef.current = {
-      spec: continuousSpec,
+      spec,
       revision,
       visualOperationId,
       phase: redirecting ? "redirecting" : "live",
     };
     if (replacePlayback) {
-      void director.replace(continuousSpec, revision, visualOperationId);
+      void director.replace(spec, revision, visualOperationId);
     } else if (redirecting) {
-      director.redirect(continuousSpec, revision, visualOperationId);
+      director.redirect(spec, revision, visualOperationId);
     } else {
-      void director.start(continuousSpec, revision, visualOperationId);
+      void director.start(spec, revision, visualOperationId);
     }
   }, [director]);
   const generateSpokenVisual = useCallback((text: string, turnId: string) => {
+    if (visualTurnProgressRef.current.turnId !== turnId) {
+      rollingStoryRef.current.enabled = false;
+      if (lastVisualTurnIdRef.current !== null || activeVisualRef.current !== null) {
+        storyClipIndexRef.current = Math.max(
+          storyClipIndexRef.current,
+          OPENING_VIDEO_DURATIONS.length,
+        );
+      }
+      visualTurnProgressRef.current = {
+        turnId,
+        clipCount: 0,
+        lastSubject: "",
+        guidanceSubject: "",
+      };
+    }
+    if (visualTurnProgressRef.current.clipCount >= MAX_VISUAL_CLIPS_PER_TURN) return;
     const replacePlayback =
-      replaceAfterInterruptionRef.current
+      replaceAfterGuidanceRef.current
       || (
         lastVisualTurnIdRef.current !== null
         && lastVisualTurnIdRef.current !== turnId
       );
     const spec = visualFromSpokenResponse(
       text,
+      durationForStoryClip(storyClipIndexRef.current),
       replacePlayback ? undefined : activeVisualRef.current?.spec.continuityKey,
     );
     if (!spec?.concept) return;
     lastVisualTurnIdRef.current = turnId;
-    replaceAfterInterruptionRef.current = false;
+    replaceAfterGuidanceRef.current = false;
     startVisualSpec(spec, replacePlayback);
+    storyClipIndexRef.current += 1;
+    visualTurnProgressRef.current = {
+      turnId,
+      clipCount: visualTurnProgressRef.current.clipCount + 1,
+      lastSubject: spec.visualDescription,
+      guidanceSubject:
+        visualTurnProgressRef.current.guidanceSubject || spec.visualDescription,
+    };
   }, [startVisualSpec]);
+
+  const keepRollingFromTurn = useCallback((turnId: string) => {
+    const progress = visualTurnProgressRef.current;
+    if (
+      progress.turnId === turnId
+      && progress.clipCount === 1
+      && progress.lastSubject
+    ) {
+      generateSpokenVisual(
+        automaticContinuationFrom(progress.lastSubject, 1),
+        turnId,
+      );
+    }
+    const completed = visualTurnProgressRef.current;
+    if (
+      completed.turnId === turnId
+      && completed.clipCount > 0
+      && completed.guidanceSubject
+    ) {
+      rollingStoryRef.current = {
+        enabled: true,
+        guidanceSubject: completed.guidanceSubject,
+        continuationIndex: 1,
+      };
+    }
+  }, [generateSpokenVisual]);
+
+  const markGuidancePending = useCallback(() => {
+    const activeTurnId = visualTurnProgressRef.current.turnId;
+    if (activeTurnId) keepRollingFromTurn(activeTurnId);
+    storyClipIndexRef.current = Math.max(
+      storyClipIndexRef.current,
+      OPENING_VIDEO_DURATIONS.length,
+    );
+    replaceAfterGuidanceRef.current = activeVisualRef.current !== null;
+  }, [keepRollingFromTurn]);
 
 
   const onEvent = useCallback(
@@ -221,7 +310,20 @@ export function LiveLessonShell({
         ) {
           setEventStatusDetail(undefined);
         }
-        if (event.state === "ended") streamingSubjectsRef.current.reset();
+        if (event.state === "ended") {
+          streamingSubjectsRef.current.reset();
+          visualTurnProgressRef.current = {
+            turnId: null,
+            clipCount: 0,
+            lastSubject: "",
+            guidanceSubject: "",
+          };
+          rollingStoryRef.current = {
+            enabled: false,
+            guidanceSubject: "",
+            continuationIndex: 0,
+          };
+        }
       }
       if (pendingVisualFailureRef.current) {
         if (event.type === "session.status" && event.state === "ended") {
@@ -246,62 +348,50 @@ export function LiveLessonShell({
       }
       if (event.type === "visual.start") {
         void director.start(
-          withContinuousVideoContract(event.spec),
+          event.spec,
           event.revision,
           event.visualOperationId,
         );
       }
       if (event.type === "visual.redirect") {
         director.redirect(
-          withContinuousVideoContract(event.spec),
+          event.spec,
           event.revision,
           event.visualOperationId,
         );
       }
       if (event.type === "visual.stop") {
-        void director.stop();
+        if (["user_requested", "budget", "failed"].includes(event.reason)) {
+          rollingStoryRef.current.enabled = false;
+          void director.stop();
+        }
       }
       if (event.type === "transcript.delta") {
-        const subjects = streamingSubjectsRef.current.pushDelta(
-          event.turnId,
-          event.text,
-        );
+        const subjects = streamingSubjectsRef.current.pushDelta(event.turnId, event.text);
         for (const subject of subjects) {
-          latestSpokenVisualRef.current = { text: subject, turnId: event.turnId };
           generateSpokenVisual(subject, event.turnId);
         }
       }
       if (event.type === "transcript.final") {
-        if (event.interrupted) {
-          latestSpokenVisualRef.current = null;
-          lastVisualTurnIdRef.current = null;
-          replaceAfterInterruptionRef.current = activeVisualRef.current !== null;
-        }
-        if (event.interrupted && activeVisualRef.current) {
-          activeVisualRef.current = {
-            ...activeVisualRef.current,
-            phase: "held",
-            stopReason: "interrupted",
-          };
-          void director.continuePlaybackUntilReplacement();
-        }
         const subjects = streamingSubjectsRef.current.finish(
           event.turnId,
           event.text,
           event.interrupted,
         );
         if (!event.interrupted) {
-          for (const subject of subjects) {
-            latestSpokenVisualRef.current = { text: subject, turnId: event.turnId };
-            generateSpokenVisual(subject, event.turnId);
-          }
+          for (const subject of subjects) generateSpokenVisual(subject, event.turnId);
         }
-        if (!event.interrupted && event.text.trim().length > 0) {
-          latestSpokenVisualRef.current = { text: event.text, turnId: event.turnId };
+        keepRollingFromTurn(event.turnId);
+        if (event.interrupted) {
+          storyClipIndexRef.current = Math.max(
+            storyClipIndexRef.current,
+            OPENING_VIDEO_DURATIONS.length,
+          );
+          replaceAfterGuidanceRef.current = activeVisualRef.current !== null;
         }
       }
     },
-    [director, generateSpokenVisual, metrics],
+    [director, generateSpokenVisual, keepRollingFromTurn, metrics],
   );
 
 
@@ -324,12 +414,24 @@ export function LiveLessonShell({
   useEffect(() => {
     if (tutor.state === "ended") return;
     const pump = window.setInterval(() => {
-      const subject = latestSpokenVisualRef.current;
-      if (!subject || !director.canGenerate()) return;
-      generateSpokenVisual(subject.text, subject.turnId);
-    }, CONTINUOUS_VISUAL_PUMP_MS);
+      const rolling = rollingStoryRef.current;
+      if (!rolling.enabled || !rolling.guidanceSubject || !director.canGenerate()) return;
+      const continuationIndex = rolling.continuationIndex + 1;
+      const spec = visualFromSpokenResponse(
+        automaticContinuationFrom(rolling.guidanceSubject, continuationIndex),
+        durationForStoryClip(storyClipIndexRef.current),
+        activeVisualRef.current?.spec.continuityKey,
+      );
+      if (!spec) {
+        rolling.enabled = false;
+        return;
+      }
+      startVisualSpec(spec);
+      storyClipIndexRef.current += 1;
+      rolling.continuationIndex = continuationIndex;
+    }, ROLLING_CONTINUATION_PUMP_MS);
     return () => window.clearInterval(pump);
-  }, [director, generateSpokenVisual, tutor.state]);
+  }, [director, startVisualSpec, tutor.state]);
   const statusDetail = tutor.state === "ended"
     ? undefined
     : tutor.error
@@ -378,7 +480,7 @@ export function LiveLessonShell({
     ) return;
     recoveredVisualStarted.current = true;
     void director.start(
-      withContinuousVideoContract(initialState.visual.spec),
+      initialState.visual.spec,
       live.visual.revision,
       live.visual.visualOperationId,
     );
@@ -422,6 +524,7 @@ export function LiveLessonShell({
 
   useEffect(() => {
     if (director.failure && live.visual && live.visual.phase !== "held") {
+      rollingStoryRef.current.enabled = false;
       pendingVisualFailureRef.current = true;
       dispatch({
         protocolVersion: 1,
@@ -436,6 +539,7 @@ export function LiveLessonShell({
     (text: string) => {
       const value = text.trim();
       if (!value) return;
+      markGuidancePending();
       learnerCounter.current += 1;
       dispatch({
         type: "learner.turn",
@@ -449,13 +553,14 @@ export function LiveLessonShell({
       });
       void tutor.sendText(value).catch(() => undefined);
     },
-    [tutor],
+    [markGuidancePending, tutor],
   );
 
   const selectCard = useCallback(
     (cardId: string, revision: number) => {
       const card = live.activeCards?.cards.find((c) => c.id === cardId);
       if (!card || !live.activeCards || revision !== live.activeCards.revision) return;
+      markGuidancePending();
       learnerCounter.current += 1;
       dispatch({
         type: "learner.turn",
@@ -469,11 +574,12 @@ export function LiveLessonShell({
       });
       void tutor.selectCard({ id: card.id, title: card.title, revision }).catch(() => undefined);
     },
-    [live.activeCards, tutor],
+    [live.activeCards, markGuidancePending, tutor],
   );
 
   const interrupt = useCallback(() => {
     const active = live.activeTurn;
+    markGuidancePending();
     pendingInterruptionAuditRef.current = true;
     setInterruptionAuditSequence((sequence) => sequence + 1);
     dispatch({ type: "learner.interrupt" });
@@ -481,7 +587,7 @@ export function LiveLessonShell({
       void tutor.interrupt({ turnId: active.turnId, heardCharacters: active.text.length })
         .catch(() => undefined);
     }
-  }, [tutor, live.activeTurn]);
+  }, [markGuidancePending, tutor, live.activeTurn]);
 
   useEffect(() => {
     if (!pendingInterruptionAuditRef.current) return;

@@ -130,7 +130,7 @@ describe("tutor tool contracts", () => {
           preferenceSignals: { explanationMode: "visual", pace: "steady" }
         }
       },
-      { name: "stop_visual", arguments: { reason: "interrupted" } }
+      { name: "stop_visual", arguments: { reason: "user_requested" } }
     ];
 
     for (const call of calls) {
@@ -139,11 +139,10 @@ describe("tutor tool contracts", () => {
   });
 
   it.each([
-    ["legacy ten-second visual duration", { name: "show_visual", arguments: { ...visualSpec, durationSeconds: 10 } }],
-    ["legacy fifteen-second visual duration", { name: "show_visual", arguments: { ...visualSpec, durationSeconds: 15 } }],
     ["unsupported visual duration", { name: "show_visual", arguments: { ...visualSpec, durationSeconds: 7 } }],
     ["unknown tool", { name: "search_web", arguments: {} }],
-    ["unknown argument", { name: "stop_visual", arguments: { reason: "complete", force: true } }],
+    ["unknown argument", { name: "stop_visual", arguments: { reason: "user_requested", force: true } }],
+    ["implicit visual stop", { name: "stop_visual", arguments: { reason: "interrupted" } }],
     ["model-supplied card id", {
       name: "present_cards",
       arguments: {

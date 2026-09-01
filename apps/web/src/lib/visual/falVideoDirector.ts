@@ -4,7 +4,7 @@ import { z } from "zod";
 import { readActiveSessionId } from "@/lib/session-storage";
 
 const promptCompiler = new H3PromptCompiler();
-const MAX_PREFETCH_CLIPS = 6;
+const MAX_PREFETCH_CLIPS = 2;
 
 const reservationResponseSchema = z.strictObject({
   reservationId: z.uuid(),
@@ -25,7 +25,12 @@ const reservationErrorResponseSchema = z.object({
   dailyLimitSeconds: z.number().int().positive().optional()
 });
 const queuedVideoResponseSchema = z.strictObject({
-  videoUrl: z.url().refine((value) => value.startsWith("https://")),
+  videoUrl: z.string().refine(
+    (value) =>
+      value.startsWith("https://")
+      || /^data:video\/mp4;base64,[A-Za-z0-9+/]+=*$/u.test(value),
+    "A secure video source is required.",
+  ),
   remainingSeconds: z.number().int().nonnegative(),
   dailyLimitSeconds: z.number().int().positive()
 });
@@ -93,12 +98,17 @@ export type QueuedVideoGenerator = (
   authorization: VisualAuthorization,
   prompt: string,
   signal: AbortSignal,
+  imageUrl?: string,
 ) => Promise<QueuedVideoResult>;
 export type QueuedVideoHandoff = (
   video: HTMLVideoElement,
   videoUrl: string,
   signal: AbortSignal,
 ) => Promise<void>;
+export type VideoFinalFrameExtractor = (
+  videoUrl: string,
+  signal: AbortSignal,
+) => Promise<string | undefined>;
 export interface VideoPipelineTiming {
   promptVersion: number;
   triggerToGenerationStartMs: number | null;
@@ -127,6 +137,7 @@ export interface FalVideoDirectorOptions {
   releaseAuthorization?: VisualReleaseProvider;
   generateVideo?: QueuedVideoGenerator;
   handoffQueuedVideo?: QueuedVideoHandoff;
+  extractFinalFrame?: VideoFinalFrameExtractor;
   onGenerationAccepted?(reservationId: string): void;
   now?: () => number;
 }
@@ -157,6 +168,7 @@ export class FalVideoDirector {
   private readonly releaseAuthorizationProvider: VisualReleaseProvider;
   private readonly generateVideo: QueuedVideoGenerator;
   private readonly handoffQueuedVideo: QueuedVideoHandoff;
+  private readonly extractFinalFrame: VideoFinalFrameExtractor;
   private onGenerationAccepted: ((reservationId: string) => void) | undefined;
   private readonly listeners = new Set<(snapshot: VisualDirectorSnapshot) => void>();
   private snapshotValue = INITIAL_SNAPSHOT;
@@ -191,6 +203,8 @@ export class FalVideoDirector {
   private readonly now: () => number;
   private readonly pipelineTimings = new Map<number, MutableVideoPipelineTiming>();
   private readonly pipelineOrder: number[] = [];
+  private continuationFrameDataUrl: string | null = null;
+  private readonly finalFrameDataUrls = new Map<string, string>();
 
   constructor(options: FalVideoDirectorOptions = {}) {
     this.now = options.now ?? (() => performance.now());
@@ -199,6 +213,7 @@ export class FalVideoDirector {
     this.releaseAuthorizationProvider = options.releaseAuthorization ?? releaseVisualAuthorization;
     this.generateVideo = options.generateVideo ?? generateQueuedVideo;
     this.handoffQueuedVideo = options.handoffQueuedVideo ?? crossfadeQueuedVideo;
+    this.extractFinalFrame = options.extractFinalFrame ?? extractVideoFinalFrame;
   }
 
   get snapshot(): VisualDirectorSnapshot {
@@ -268,7 +283,7 @@ export class FalVideoDirector {
     element.addEventListener?.("ended", this.onQueuedVideoEnded);
     element.addEventListener?.("loadeddata", this.onQueuedVideoLoaded);
     element.srcObject = null;
-    element.loop = this.playbackQueue.length === 0;
+    element.loop = false;
     if (this.queuedVideoUrl) {
       element.src = this.queuedVideoUrl;
       void element.play().catch(() => undefined);
@@ -314,7 +329,17 @@ export class FalVideoDirector {
       });
 
       try {
-        const prompt = promptCompiler.compile(spec);
+        const replacesCurrentConversation = this.replacementPromptVersions.has(promptVersion);
+        const visibleFrame = captureVisibleFrame(this.videoElement);
+        const imageUrl = replacesCurrentConversation
+          ? (
+              this.queuedVideoUrl
+                ? this.finalFrameDataUrls.get(this.queuedVideoUrl)
+                : undefined
+            ) ?? visibleFrame ?? this.continuationFrameDataUrl ?? undefined
+          : this.continuationFrameDataUrl ?? visibleFrame;
+        if (replacesCurrentConversation) this.continuationFrameDataUrl = imageUrl ?? null;
+        const prompt = promptCompiler.compile(spec, { conditioned: Boolean(imageUrl) });
         const authorization = await this.getAuthorization(spec.durationSeconds, controller.signal);
         if (controller.signal.aborted || generation !== this.sessionGeneration) {
           await this.releaseAuthorizationProvider(authorization).catch(() => null);
@@ -337,6 +362,7 @@ export class FalVideoDirector {
           authorization,
           prompt,
           controller.signal,
+          imageUrl,
         );
         if (
           controller.signal.aborted
@@ -360,6 +386,18 @@ export class FalVideoDirector {
           reservationId: authorization.reservationId
         });
         this.onGenerationAccepted?.(authorization.reservationId);
+        const finalFrame = await this.extractFinalFrame(
+          generated.videoUrl,
+          controller.signal,
+        ).catch(() => undefined);
+        if (
+          !controller.signal.aborted
+          && generation === this.sessionGeneration
+          && finalFrame
+        ) {
+          this.finalFrameDataUrls.set(generated.videoUrl, finalFrame);
+          this.continuationFrameDataUrl = finalFrame;
+        }
         return true;
       } catch (error) {
         if (controller.signal.aborted) return false;
@@ -426,23 +464,6 @@ export class FalVideoDirector {
     return true;
   }
 
-  async continuePlaybackUntilReplacement(): Promise<void> {
-    this.queuedRequestVersion++;
-    this.startQueueEpoch++;
-    this.pendingStartVersions.clear();
-    this.replacementPromptVersions.clear();
-    this.pendingPromptVersion = null;
-    this.discardPrefetchedPlayback();
-    this.keepQueuedVideoPlaying();
-    this.publish({
-      status: this.queuedVideoUrl ? "holding" : "stopped",
-      promptVersion: this.latestPromptVersion || null,
-      failure: null,
-    });
-    await this.releaseOperation(false);
-    this.keepQueuedVideoPlaying();
-  }
-
   async stop(): Promise<void> {
     this.queuedRequestVersion++;
     this.startQueueEpoch++;
@@ -483,24 +504,29 @@ export class FalVideoDirector {
       if (this.videoElement) {
         this.videoElement.srcObject = null;
         this.videoElement.src = videoUrl;
-        this.videoElement.loop = this.playbackQueue.length === 0;
+        this.videoElement.loop = false;
         void this.videoElement.play().catch(() => undefined);
       }
       return;
     }
     if (replacesCurrentConversation) {
       this.discardPrefetchedPlayback();
-      this.playbackPreemptionPending = true;
       this.playbackQueue.push({ videoUrl, promptVersion });
       this.preloadQueuedVideo(videoUrl);
       if (this.videoElement) this.videoElement.loop = false;
-      void this.advanceQueuedPlayback();
+      if (this.playbackAdvancing || this.videoElement?.ended) {
+        this.playbackPreemptionPending = true;
+        void this.advanceQueuedPlayback();
+      }
       return;
     }
 
     this.playbackQueue.push({ videoUrl, promptVersion });
     this.preloadQueuedVideo(videoUrl);
-    if (this.videoElement) this.videoElement.loop = false;
+    if (this.videoElement) {
+      this.videoElement.loop = false;
+      if (this.videoElement.ended) void this.advanceQueuedPlayback();
+    }
   }
 
   private preloadQueuedVideo(videoUrl: string): void {
@@ -518,8 +544,8 @@ export class FalVideoDirector {
     if (this.playbackAdvancing || !this.videoElement) return;
     const nextClip = this.playbackQueue.shift();
     if (!nextClip) {
-      this.videoElement.loop = true;
-      void this.videoElement.play().catch(() => undefined);
+      this.videoElement.loop = false;
+      this.videoElement.pause();
       return;
     }
     this.playbackPreemptionPending = false;
@@ -535,8 +561,8 @@ export class FalVideoDirector {
       this.queuedPromptVersion = nextClip.promptVersion;
       this.markPipelineDisplayed(nextClip.promptVersion);
       this.preloadedVideos.delete(nextClip.videoUrl);
-      video.loop = this.playbackQueue.length === 0;
-      if (!video.loop) void video.play().catch(() => undefined);
+      video.loop = false;
+      void video.play().catch(() => undefined);
     } catch {
       if (!controller.signal.aborted && this.videoElement === video) {
         this.playbackQueue.unshift(nextClip);
@@ -555,8 +581,8 @@ export class FalVideoDirector {
 
   private keepQueuedVideoPlaying(): void {
     if (!this.queuedVideoUrl || !this.videoElement) return;
-    this.videoElement.loop = this.playbackQueue.length === 0;
-    void this.videoElement.play().catch(() => undefined);
+    this.videoElement.loop = false;
+    if (!this.videoElement.ended) void this.videoElement.play().catch(() => undefined);
   }
 
   private continueQueuedPlayback(generation: number): boolean {
@@ -565,8 +591,8 @@ export class FalVideoDirector {
     }
     this.pendingPromptVersion = null;
     if (this.videoElement) {
-      this.videoElement.loop = this.playbackQueue.length === 0;
-      void this.videoElement.play().catch(() => undefined);
+      this.videoElement.loop = false;
+      if (!this.videoElement.ended) void this.videoElement.play().catch(() => undefined);
     }
     this.publish({
       status: "generating",
@@ -640,7 +666,7 @@ export class FalVideoDirector {
       preload.removeAttribute("src");
     }
     this.preloadedVideos.clear();
-    if (this.videoElement && this.queuedVideoUrl) this.videoElement.loop = true;
+    if (this.videoElement && this.queuedVideoUrl) this.videoElement.loop = false;
   }
 
   private async releaseOperation(clearFrame: boolean): Promise<void> {
@@ -652,6 +678,8 @@ export class FalVideoDirector {
       this.discardPrefetchedPlayback();
       this.queuedVideoUrl = null;
       this.queuedPromptVersion = null;
+      this.continuationFrameDataUrl = null;
+      this.finalFrameDataUrls.clear();
       if (this.videoElement) {
         this.videoElement.srcObject = null;
         this.videoElement.removeAttribute?.("src");
@@ -776,7 +804,7 @@ async function restoreQueuedVideoSource(
 ): Promise<void> {
   video.srcObject = null;
   video.src = source;
-  video.loop = true;
+  video.loop = false;
   video.load();
   const recoverySignal = new AbortController().signal;
   await waitForVideoEvent(video, "loadeddata", recoverySignal, 5_000);
@@ -820,7 +848,7 @@ async function crossfadeQueuedVideo(
     overlay.className = video.className;
     overlay.crossOrigin = "anonymous";
     overlay.autoplay = true;
-    overlay.loop = true;
+    overlay.loop = false;
     overlay.muted = true;
     overlay.playsInline = true;
     overlay.preload = "auto";
@@ -931,6 +959,7 @@ async function generateQueuedVideo(
   authorization: VisualAuthorization,
   prompt: string,
   signal: AbortSignal,
+  imageUrl?: string,
 ): Promise<QueuedVideoResult> {
   const response = await fetch("/api/fal/generate", {
     method: "POST",
@@ -942,12 +971,62 @@ async function generateQueuedVideo(
       reservationId: authorization.reservationId,
       durationSeconds: authorization.durationSeconds,
       prompt,
+      ...(imageUrl ? { imageUrl } : {}),
     }),
     signal
   });
   if (!response.ok) throw new Error(`Queued visual generation failed (${response.status})`);
   const payload: unknown = await response.json();
   return queuedVideoResponseSchema.parse(payload);
+}
+
+/** Capture the exact story state the child is currently seeing. */
+function captureVisibleFrame(video: HTMLVideoElement | null): string | undefined {
+  if (
+    typeof document === "undefined"
+    || !video
+    || video.readyState < 2
+    || video.videoWidth < 1
+    || video.videoHeight < 1
+  ) return undefined;
+  try {
+    const canvas = document.createElement("canvas");
+    const width = Math.min(640, video.videoWidth);
+    canvas.width = width;
+    canvas.height = Math.max(1, Math.round(width * video.videoHeight / video.videoWidth));
+    const context = canvas.getContext("2d");
+    if (!context) return undefined;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.82);
+  } catch {
+    // Cross-origin or reduced browser media support: fall back to text-to-video.
+    return undefined;
+  }
+}
+
+async function extractVideoFinalFrame(
+  videoUrl: string,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  if (typeof document === "undefined" || signal.aborted) return undefined;
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "auto";
+  video.src = videoUrl;
+  try {
+    video.load();
+    await waitForVideoEvent(video, "loadedmetadata", signal, 3_500);
+    if (!Number.isFinite(video.duration) || video.duration <= 0) return undefined;
+    video.currentTime = Math.max(0, video.duration - 0.06);
+    await waitForVideoEvent(video, "seeked", signal, 3_500);
+    return captureVisibleFrame(video);
+  } finally {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
 }
 
 async function releaseVisualAuthorization(

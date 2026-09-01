@@ -1,0 +1,20 @@
+subject_definitions:
+<Subject 1> is the exact small red fox from <Picture 1>, including the same red-orange fur, cream muzzle and chest, black paws, large triangular ears, white-tipped tail, simple illustrated facial features, childlike proportions, and cobalt-blue knitted scarf.
+<Subject 2> is the exact round moss-covered robot from <Picture 2>, including the same pale face panel, tiny black oval eyes, single antenna with white orb, rounded cream torso, green moss patches, gray segmented arms, short legs, and gentle child-friendly proportions.
+
+summary:
+A continuous children's storybook shot in which <Subject 1> and <Subject 2> leave the moonlit stepping stones and discover a meadow of floating golden fireflies.
+
+retention_analysis:
+<Subject 1>: fully preserve identity, silhouette, face, fur pattern, blue scarf, body proportions, and illustration style from <Picture 1>.
+<Subject 2>: fully preserve identity, silhouette, face panel, antenna, moss distribution, limbs, body proportions, and illustration style from <Picture 2>.
+Transfer the cool moonlit palette, soft painted forest texture, rounded shapes, and gentle child-friendly visual language from both reference pictures to the target video.
+
+detailed_description:
+[Shot 1] In the same hand-painted moonlit forest world, <Subject 1> walks into a quiet meadow while <Subject 2> follows beside the fox. Tiny golden fireflies rise from the grass and circle both characters. The fox looks delighted; the robot raises one hand carefully as a firefly lands on it. Slow rightward tracking camera, stable full-body silhouettes, restrained parallax, one continuous shot, no cuts, no dialogue, no captions, no written text.
+
+overall_soundscape:
+Quiet nighttime forest, soft grass footsteps, faint robot servos, and delicate firefly chimes.
+
+non_diegetic_music:
+Soft warm celesta and muted strings, slow and reassuring.

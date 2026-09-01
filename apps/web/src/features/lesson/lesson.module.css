@@ -662,6 +662,26 @@
   outline: none;
 }
 
+.textInput {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.textInput::placeholder {
+  color: var(--ink-faint);
+}
+
+.textInput:focus-visible {
+  border-color: var(--accent-strong);
+  outline: 3px solid rgb(100 87 214 / 0.18);
+}
+
 .composer:focus-within {
   outline: none;
 }

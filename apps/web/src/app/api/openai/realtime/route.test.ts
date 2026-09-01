@@ -491,7 +491,7 @@ describe("proxyRealtimeCall", () => {
     expect(realtimeSession.instructions).toBe(
       buildTutorInstructions("Authenticated learner age band: 13-15."),
     );
-    expect(realtimeSession.instructions).toContain("Age adaptation and pedagogy:");
+    expect(realtimeSession.instructions).toContain("Story canon and rhythm:");
     expect(realtimeSession.instructions).toContain("Safety:");
     expect(realtimeSession.instructions).toContain("Conversation and tool rules:");
     expect(realtimeSession.instructions).toContain("Learner memory:");
@@ -518,7 +518,7 @@ describe("proxyRealtimeCall", () => {
       evidence: "The learner correctly predicted the direction of acceleration.",
       confidenceDelta: 0.2
     }],
-    ["stop_visual", { reason: "complete" }]
+    ["stop_visual", { reason: "user_requested" }]
   ])("advertises a %s payload accepted by runtime validation", (name, arguments_) => {
     const advertisedTool = TUTOR_TOOL_DEFINITIONS.find((tool) => tool.name === name);
     expect(advertisedTool).toBeDefined();

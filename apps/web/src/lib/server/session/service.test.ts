@@ -217,7 +217,7 @@ function tutorDraft(question: string) {
     reply,
     toolCalls: [
       ...(lower.includes("stop")
-        ? [{ name: "stop_visual", arguments: { reason: "topic_changed" } }]
+        ? [{ name: "stop_visual", arguments: { reason: "user_requested" } }]
         : lower.includes("show") || lower.includes("animate")
           ? [{
               name: "show_visual",
@@ -375,7 +375,7 @@ describe("SessionService", () => {
       protocolVersion: 1,
       type: "visual.stop",
       revision: 2,
-      reason: "topic_changed",
+      reason: "user_requested",
     });
     expect(sessions.states.get(created.sessionId)?.visual).toBeNull();
   });

@@ -23,7 +23,7 @@ describe("ScienceCanvas", () => {
       <ScienceCanvas visual={null} videoRef={videoRef} />,
     );
 
-    expect(screen.getByText("Your learning journey starts here")).toBeTruthy();
+    expect(screen.getByText("Say where Niko and Moss should go first")).toBeTruthy();
     expect(container.querySelector("svg")).toBeNull();
     expect(container.querySelector("video")).toBeNull();
     expect(screen.queryByText("Awaiting a concept")).toBeNull();
@@ -38,7 +38,7 @@ describe("ScienceCanvas", () => {
 
     expect(container.querySelector("svg")).toBeNull();
     expect(container.querySelector("video")).toBeNull();
-    expect(screen.getByText("Your learning journey starts here")).toBeTruthy();
+    expect(screen.getByText("Say where Niko and Moss should go first")).toBeTruthy();
   });
 
   it("keeps the opening message visible until the first video frame is ready", () => {
@@ -48,12 +48,12 @@ describe("ScienceCanvas", () => {
     );
 
     expect(container.querySelector("video")).toHaveAttribute("data-ready", "false");
-    expect(screen.getByText("Your learning journey starts here")).toBeTruthy();
+    expect(screen.getByText("Say where Niko and Moss should go first")).toBeTruthy();
 
     rerender(<ScienceCanvas visual={visual} videoRef={videoRef} videoReady />);
 
     expect(container.querySelector("video")).toHaveAttribute("data-ready", "true");
-    expect(screen.queryByText("Your learning journey starts here")).toBeNull();
+    expect(screen.queryByText("Say where Niko and Moss should go first")).toBeNull();
   });
 
   it("renders and attaches the generated stream when its first frame is ready", () => {
@@ -64,10 +64,10 @@ describe("ScienceCanvas", () => {
 
     const video = container.querySelector("video");
     expect(video).toBeTruthy();
-    expect(video?.loop).toBe(true);
+    expect(video?.loop).toBe(false);
     expect(container.querySelector("svg")).toBeNull();
     expect(videoRef).toHaveBeenCalledWith(expect.any(HTMLVideoElement));
-    expect(screen.getByText("Continuous live visual")).toBeTruthy();
+    expect(screen.getByText("Story world · live")).toBeTruthy();
     expect(screen.getByLabelText(/Lesson visual: orbital motion/u).getAttribute("aria-label"))
       .not.toContain(visual.spec.visualDescription);
   });
@@ -82,7 +82,7 @@ describe("ScienceCanvas", () => {
     );
 
     expect(container.querySelector("video")).toBeTruthy();
-    expect(screen.getByText("Continuous live visual")).toBeTruthy();
+    expect(screen.getByText("Story world · live")).toBeTruthy();
     expect(screen.queryByText("Changing direction…")).toBeNull();
   });
 
@@ -95,7 +95,7 @@ describe("ScienceCanvas", () => {
       />,
     );
 
-    expect(screen.getByText("Continuous visual · holding current scene")).toBeTruthy();
+    expect(screen.getByText("Story world · waiting for your choice")).toBeTruthy();
     expect(screen.queryByText(/Visual unavailable/u)).toBeNull();
   });
 

@@ -41,8 +41,8 @@ const reservationId = "22222222-2222-4222-8222-222222222222";
 const body = {
   sessionId,
   reservationId,
-  durationSeconds: 5,
-  prompt: `${PERMANENT_VIDEO_STYLE} Scientific subject: Heat increases molecular motion inside a sealed gas. Create a fresh, exactly 5-second, 16:9 scientific animation of only this subject. Keep the film text-free, centered, and fully illustrated.`,
+  durationSeconds: 15,
+  prompt: `${PERMANENT_VIDEO_STYLE} Scientific subject: Heat increases molecular motion inside a sealed gas. Create a fresh, exactly 15-second, 16:9 scientific animation of only this subject. Keep the film text-free, centered, and fully illustrated.`,
 };
 
 function request(input: Record<string, unknown> = body): Request {
@@ -93,7 +93,7 @@ describe("POST /api/fal/generate", () => {
           prompt: expect.any(String),
           sync_mode: false,
           resolution: "480P",
-          duration: 5,
+          duration: 15,
           aspect_ratio: "16:9",
           prompt_expansion_mode: "balanced",
           enable_safety_checker: true,
@@ -105,11 +105,11 @@ describe("POST /api/fal/generate", () => {
       input: { prompt: string };
     };
     expect(generation.input.prompt).toContain(
-      "premium mixed 2D illustrated motion language",
+      "premium hand-drawn 2D storybook cel animation",
     );
     expect(generation.input.prompt).toContain(body.prompt);
     expect(generation.input.prompt).toContain(
-      "fresh, exactly 5-second, 16:9 scientific animation",
+      "fresh, exactly 15-second, 16:9 scientific animation",
     );
     expect(generation.input.prompt).toContain("Keep the film text-free");
     expect(generation.input.prompt.length).toBeLessThan(2_000);
@@ -125,6 +125,56 @@ describe("POST /api/fal/generate", () => {
     );
   });
 
+  it("uses image-to-video when the browser supplies the visible story frame", async () => {
+    const imageUrl = "data:image/jpeg;base64,/9j/AA==";
+
+    const response = await POST(request({
+      ...body,
+      durationSeconds: 15,
+      imageUrl,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.subscribe).toHaveBeenCalledWith(
+      "minimax/h3-max/image-to-video",
+      expect.objectContaining({
+        input: {
+          prompt: body.prompt,
+          image_url: imageUrl,
+          sync_mode: false,
+          resolution: "480P",
+          duration: 15,
+          prompt_expansion_mode: "disabled",
+          enable_safety_checker: true,
+        },
+      }),
+    );
+  });
+
+  it("requests a small CDN response for the rolling 480p pipeline", async () => {
+    const remoteVideo = "https://v3.fal.media/files/fast-delivery.mp4";
+    mocks.subscribe.mockResolvedValueOnce({
+      data: { video: { url: remoteVideo } },
+      requestId: "fal-request-cdn",
+    });
+
+    const response = await POST(request({ ...body, durationSeconds: 10 }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ videoUrl: remoteVideo });
+    expect(response.headers.get("x-axiom-video-url")).toBe(remoteVideo);
+    expect(mocks.subscribe).toHaveBeenCalledWith(
+      "minimax/h3-max/text-to-video",
+      expect.objectContaining({
+        input: expect.objectContaining({
+          sync_mode: false,
+          resolution: "480P",
+          duration: 10,
+        }),
+      }),
+    );
+  });
+
   it("rejects legacy context and oversized subjects before provider work", async () => {
     const legacyResponse = await POST(request({
       ...body,
@@ -132,7 +182,7 @@ describe("POST /api/fal/generate", () => {
     }));
     const oversizedResponse = await POST(request({
       ...body,
-      prompt: `${PERMANENT_VIDEO_STYLE} ${"x".repeat(2_001)}`,
+      prompt: `${PERMANENT_VIDEO_STYLE} ${"x".repeat(4_001)}`,
     }));
 
     expect(legacyResponse.status).toBe(400);

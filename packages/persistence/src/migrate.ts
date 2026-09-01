@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { z } from "zod";
@@ -415,7 +416,7 @@ export async function loadMigrations(): Promise<readonly Migration[]> {
   return await Promise.all(migrationUrls.map(async (url) => {
     const sql = await readFile(fileURLToPath(url), "utf8");
     return {
-      name: fileURLToPath(url).split("/").at(-1)!,
+      name: basename(fileURLToPath(url)),
       sql,
       checksum: createHash("sha256").update(sql).digest("hex"),
     };

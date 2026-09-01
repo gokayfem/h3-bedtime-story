@@ -21,7 +21,6 @@ export interface UseVisualDirectorResult extends VisualDirectorSnapshot {
   replace(spec: VisualSpec, revision: number, visualOperationId: string): Promise<boolean>;
   redirect(spec: VisualSpec, revision: number, visualOperationId: string): boolean;
   canGenerate(): boolean;
-  continuePlaybackUntilReplacement(): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -418,19 +417,6 @@ export function useVisualDirector(
     }
     return reducedMotion ? Promise.resolve() : director.stop();
   }, [director, finishVisual, recordQuota, reducedMotion]);
-  const continuePlaybackUntilReplacement = useCallback(() => {
-    visualStopped.current = true;
-    activeAcknowledgement.current = null;
-    firstFramePending.current = false;
-    finishVisual("cancelled");
-    if (quotaReserved.current) {
-      quotaReserved.current = false;
-      recordQuota("released");
-    }
-    return reducedMotion
-      ? Promise.resolve()
-      : director.continuePlaybackUntilReplacement();
-  }, [director, finishVisual, recordQuota, reducedMotion]);
   const canGenerate = useCallback(
     () => !reducedMotion && director.canAcceptGeneration(),
     [director, reducedMotion],
@@ -572,7 +558,6 @@ export function useVisualDirector(
       redirect,
       replace,
       canGenerate,
-      continuePlaybackUntilReplacement,
       stop
     };
   }
@@ -599,7 +584,6 @@ export function useVisualDirector(
     redirect,
     replace,
     canGenerate,
-    continuePlaybackUntilReplacement,
     stop,
   };
 }

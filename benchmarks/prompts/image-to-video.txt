@@ -1,0 +1,7 @@
+For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+
+integrated_multimodal_description: [Shot 1] Continue directly and seamlessly from <Picture 1> in the same hand-painted children's storybook style. Preserve the exact red fox with cobalt-blue scarf, the exact moss-covered round robot, their proportions, colors, moonlit forest, glowing stream, stepping stones, lighting, and camera angle. The fox looks ahead and carefully hops to the riverbank; the robot follows with a gentle heavy step that sends one small ring across the water. The camera tracks slowly to the right with them, revealing a quiet meadow of tiny golden fireflies. Keep both characters fully recognizable and stable. One continuous shot, calm natural movement, no cuts, no dialogue, no captions, no written text.
+
+overall_soundscape: Gentle stream water, soft footfalls on stone, quiet nighttime forest, faint robot servos, and delicate firefly chimes.
+
+non_diegetic_music: Soft warm celesta and muted strings, slow and reassuring.

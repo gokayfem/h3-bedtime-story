@@ -14,7 +14,7 @@ function OpeningMessage({ overlay = false }: { overlay?: boolean }) {
   return (
     <div className={styles.canvasOpening} data-overlay={overlay || undefined}>
       <span className={styles.canvasOpeningRule} aria-hidden="true" />
-      <p className={styles.canvasOpeningMessage}>Your learning journey starts here</p>
+      <p className={styles.canvasOpeningMessage}>Say where Niko and Moss should go first</p>
     </div>
   );
 }
@@ -26,7 +26,7 @@ export function ScienceCanvas({
 }: ScienceCanvasProps) {
   if (!visual || !videoRef) {
     return (
-      <figure className={styles.canvasFrame} aria-label="Learning journey canvas">
+      <figure className={styles.canvasFrame} aria-label="Interactive story canvas">
         <OpeningMessage />
       </figure>
     );
@@ -40,7 +40,7 @@ export function ScienceCanvas({
       aria-label={
         videoReady
           ? `Lesson visual: ${visual.spec.concept}. ${visual.spec.teachingIntent}`
-          : "Learning journey canvas"
+          : "Interactive story canvas"
       }
     >
       <video
@@ -48,7 +48,6 @@ export function ScienceCanvas({
         autoPlay
         crossOrigin="anonymous"
         data-ready={videoReady}
-        loop
         muted
         playsInline
         ref={videoRef}
@@ -58,11 +57,11 @@ export function ScienceCanvas({
 
       {videoReady && !held && (
         <span className={styles.canvasBadge} data-tone="live">
-          Continuous live visual
+          Story world · live
         </span>
       )}
       {videoReady && held && (
-        <span className={styles.canvasBadge}>Continuous visual · holding current scene</span>
+        <span className={styles.canvasBadge}>Story world · waiting for your choice</span>
       )}
 
       {videoReady && (

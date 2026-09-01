@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Guided story timing</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #09111f; color: #edf4ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 36px 20px 64px; }
+    main { width: min(980px, 100%); margin: auto; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 48px); letter-spacing: -0.04em; }
+    h2 { font-size: 17px; margin: 0 0 16px; }
+    p { color: #aebdd2; line-height: 1.6; }
+    .flag { display: inline-block; margin-bottom: 16px; padding: 6px 10px; border: 1px solid #42526c; border-radius: 999px; color: #f6bd60; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .panel { margin-top: 24px; padding: 22px; border: 1px solid #23314a; border-radius: 18px; background: #101b2d; box-shadow: 0 18px 50px #02071266; }
+    .metric { padding: 14px; border-radius: 12px; background: #0a1424; }
+    .metric span { display: block; color: #8fa4bf; font-size: 12px; margin-bottom: 6px; }
+    .metric strong { font-size: 20px; }
+    .good { color: #6ee7b7; } .warn { color: #f6bd60; } .bad { color: #fb7185; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; }
+    button { border: 1px solid #334766; border-radius: 10px; background: #172844; color: #eef5ff; padding: 10px 13px; cursor: pointer; font: inherit; }
+    button:hover { background: #203659; }
+    button.primary { background: #2f6feb; border-color: #4d85ef; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .tabs button[aria-selected="true"] { background: #2f6feb; }
+    .steps { display: grid; gap: 10px; }
+    .step { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #2a3b58; border-radius: 12px; }
+    .step.done { opacity: .48; }
+    .step b { color: #91b7ff; }
+    .change { margin-top: 14px; color: #c4d5eb; padding-left: 13px; border-left: 3px solid #4d85ef; }
+    code { color: #b8c9ff; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="flag">THROWAWAY PROTOTYPE</div>
+  <h1>Can a guided story remain visually continuous?</h1>
+  <p>This demo tests one question: with measured 10-second H3 clips, choices shown at 3 seconds, and generation started when the child chooses, do we reach the next scene before playback ends—or how long must the final frame hold?</p>
+
+  <section class="panel">
+    <h2>Current story state</h2>
+    <div class="grid" id="state"></div>
+    <div class="change" id="change">Ready to explore the timing model.</div>
+  </section>
+
+  <section class="panel">
+    <h2>Free play</h2>
+    <div class="actions">
+      <button data-action="RESET">Reset story</button>
+      <button data-action="SHOW_CHOICES">Show choices at 3s</button>
+      <button class="primary" data-action="CHOOSE_ON_TIME">Choose fireflies at 4s</button>
+      <button data-action="CHOOSE_LATE">Choose late at 8s</button>
+      <button data-action="GENERATION_READY">Generation becomes ready</button>
+      <button data-action="CROSSFADE">Crossfade to next Beat</button>
+      <button data-action="INTERRUPT">Interrupt and redirect</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Guided walkthroughs</h2>
+    <div class="tabs" id="tabs"></div>
+    <p id="scenario-description"></p>
+    <div class="steps" id="steps"></div>
+  </section>
+</main>
+
+<script>
+  // Portable pure timing module. It has no DOM dependencies.
+  const StoryTiming = (() => {
+    const CLIP_SECONDS = 10.144;
+    const GENERATION_SECONDS = [5.601, 5.428];
+    const initial = () => ({
+      beat: 1,
+      phase: "playing",
+      choice: "None",
+      choiceAt: null,
+      generationSeconds: GENERATION_SECONDS[0],
+      readyAt: null,
+      bufferMargin: null,
+      holdSeconds: 0,
+      cancelled: false,
+      lastChange: "Opening Beat is playing."
+    });
+
+    function choose(state, at, label) {
+      const readyAt = at + state.generationSeconds;
+      const margin = CLIP_SECONDS - readyAt;
+      return {
+        ...state,
+        phase: "generating",
+        choice: label,
+        choiceAt: at,
+        readyAt,
+        bufferMargin: margin,
+        holdSeconds: Math.max(0, -margin),
+        cancelled: false,
+        lastChange: margin >= 0
+          ? `The next scene should be ready ${margin.toFixed(3)}s before playback ends.`
+          : `The final frame must hold for ${(-margin).toFixed(3)}s.`
+      };
+    }
+
+    function reduce(state, action) {
+      switch (action.type) {
+        case "RESET": return initial();
+        case "SHOW_CHOICES": return { ...state, phase: "choosing", lastChange: "Two guided choices appeared while the current scene kept playing." };
+        case "CHOOSE_ON_TIME": return choose(state, 4, "Follow the golden fireflies");
+        case "CHOOSE_LATE": return choose(state, 8, "Follow the golden fireflies");
+        case "GENERATION_READY": return state.readyAt === null
+          ? { ...state, lastChange: "Nothing is generating yet." }
+          : { ...state, phase: "ready", lastChange: "The next video is decoded and ready behind the current scene." };
+        case "CROSSFADE": return state.phase !== "ready"
+          ? { ...state, lastChange: "Crossfade is illegal until the next scene is ready." }
+          : {
+              ...state,
+              beat: state.beat + 1,
+              phase: "playing",
+              choice: "None",
+              choiceAt: null,
+              generationSeconds: GENERATION_SECONDS[Math.min(state.beat, GENERATION_SECONDS.length - 1)],
+              readyAt: null,
+              bufferMargin: null,
+              holdSeconds: 0,
+              lastChange: "The hidden video became visible; the old one can now be released."
+            };
+        case "INTERRUPT": return {
+          ...state,
+          phase: "redirecting",
+          cancelled: state.phase === "generating",
+          readyAt: null,
+          bufferMargin: null,
+          lastChange: "Stale generation was cancelled. The current decoded scene remains visible while direction changes."
+        };
+        return state;
+      }
+    }
+
+    return { initial, reduce, CLIP_SECONDS };
+  })();
+
+  const scenarios = {
+    onTime: {
+      name: "Measured happy path",
+      description: "The child chooses at four seconds. Watch for a small positive buffer before the 10.144-second clip ends.",
+      actions: ["SHOW_CHOICES", "CHOOSE_ON_TIME", "GENERATION_READY", "CROSSFADE"]
+    },
+    late: {
+      name: "Late choice",
+      description: "The child waits until eight seconds. The model stays honest by calculating the exact final-frame hold required.",
+      actions: ["SHOW_CHOICES", "CHOOSE_LATE", "GENERATION_READY", "CROSSFADE"]
+    },
+    redirect: {
+      name: "Child interrupts",
+      description: "The child changes direction while the next scene is generating. Stale work is cancelled without blanking playback.",
+      actions: ["SHOW_CHOICES", "CHOOSE_ON_TIME", "INTERRUPT"]
+    }
+  };
+
+  let state = StoryTiming.initial();
+  let activeScenario = "onTime";
+  let completedSteps = 0;
+
+  const actionLabels = {
+    SHOW_CHOICES: "Show the choices",
+    CHOOSE_ON_TIME: "Child chooses at 4s",
+    CHOOSE_LATE: "Child chooses at 8s",
+    GENERATION_READY: "Next scene becomes ready",
+    CROSSFADE: "Crossfade into it",
+    INTERRUPT: "Child interrupts"
+  };
+
+  function metric(label, value, tone = "") {
+    return `<div class="metric"><span>${label}</span><strong class="${tone}">${value}</strong></div>`;
+  }
+
+  function render() {
+    const margin = state.bufferMargin;
+    document.querySelector("#state").innerHTML = [
+      metric("Beat", state.beat),
+      metric("Phase", state.phase),
+      metric("Selected direction", state.choice),
+      metric("Measured generation", `${state.generationSeconds.toFixed(3)} s`),
+      metric("Expected ready time", state.readyAt === null ? "—" : `${state.readyAt.toFixed(3)} s`),
+      metric("Buffer before clip end", margin === null ? "—" : `${margin.toFixed(3)} s`, margin >= 0 ? "good" : "bad"),
+      metric("Required visual hold", `${state.holdSeconds.toFixed(3)} s`, state.holdSeconds ? "warn" : "good"),
+      metric("Stale request cancelled", state.cancelled ? "Yes" : "No")
+    ].join("");
+    document.querySelector("#change").textContent = state.lastChange;
+
+    document.querySelector("#tabs").innerHTML = Object.entries(scenarios).map(([key, item]) =>
+      `<button data-scenario="${key}" aria-selected="${key === activeScenario}">${item.name}</button>`
+    ).join("");
+    const scenario = scenarios[activeScenario];
+    document.querySelector("#scenario-description").textContent = scenario.description;
+    document.querySelector("#steps").innerHTML = scenario.actions.map((action, index) =>
+      `<div class="step ${index < completedSteps ? "done" : ""}"><b>${index + 1}</b><button data-step="${index}" ${index !== completedSteps ? "disabled" : ""}>${actionLabels[action]}</button></div>`
+    ).join("");
+  }
+
+  function dispatch(type) {
+    state = StoryTiming.reduce(state, { type });
+    render();
+  }
+
+  document.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action) dispatch(action);
+    const scenario = event.target.closest("[data-scenario]")?.dataset.scenario;
+    if (scenario) {
+      activeScenario = scenario;
+      completedSteps = 0;
+      state = StoryTiming.initial();
+      render();
+    }
+    const step = event.target.closest("[data-step]")?.dataset.step;
+    if (step !== undefined && Number(step) === completedSteps) {
+      dispatch(scenarios[activeScenario].actions[completedSteps]);
+      completedSteps += 1;
+      render();
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>

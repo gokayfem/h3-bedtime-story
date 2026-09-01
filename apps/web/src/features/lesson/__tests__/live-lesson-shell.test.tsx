@@ -14,7 +14,6 @@ const harness = vi.hoisted(() => {
     redirect: vi.fn(),
     replace: vi.fn(),
     stop: vi.fn(),
-    continuePlaybackUntilReplacement: vi.fn(),
     sendText: vi.fn(),
     director: {
       status: "idle" as "idle" | "connecting" | "holding" | "generating",
@@ -58,7 +57,6 @@ vi.mock("@/hooks/useVisualDirector", () => ({
     redirect: harness.redirect,
     replace: harness.replace,
     stop: harness.stop,
-    continuePlaybackUntilReplacement: harness.continuePlaybackUntilReplacement,
   }),
 }));
 
@@ -101,7 +99,6 @@ describe("LiveLessonShell", () => {
     harness.stop.mockReset().mockResolvedValue(undefined);
     harness.sendText.mockReset().mockResolvedValue(undefined);
     harness.director.status = "idle";
-    harness.continuePlaybackUntilReplacement.mockReset().mockResolvedValue(undefined);
     harness.director.promptVersion = null;
     harness.director.preservedPromptVersion = null;
     harness.director.canGenerate.mockReset().mockReturnValue(true);
@@ -195,11 +192,42 @@ describe("LiveLessonShell", () => {
     }));
 
     expect(harness.start).toHaveBeenCalledWith(
-      { ...spec, durationSeconds: 5 },
+      spec,
       1,
       "visual-op-1",
     );
     expect(harness.redirect).not.toHaveBeenCalled();
+  });
+
+  it("ignores implicit visual stops and stops only on the learner's explicit request", () => {
+    render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "visual.start",
+      revision: 1,
+      visualOperationId: "visual-op-1",
+      spec,
+    }));
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "visual.stop",
+      revision: 2,
+      reason: "complete",
+    }));
+
+    expect(harness.stop).not.toHaveBeenCalled();
+    expect(screen.getByTestId("visual-state").textContent).toBe("live:Orbital motion");
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "visual.stop",
+      revision: 3,
+      reason: "user_requested",
+    }));
+
+    expect(harness.stop).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("visual-state").textContent).toBe("held:Orbital motion");
   });
 
   it("keeps the current video mounted while its replacement connects", () => {
@@ -226,7 +254,7 @@ describe("LiveLessonShell", () => {
   });
 
 
-  it("waits for tutor science, then sends only each summarized subject", () => {
+  it("ignores a generic greeting, then sends each usable story subject", () => {
     render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
     act(() => harness.onEvent?.({
       protocolVersion: 1,
@@ -234,6 +262,7 @@ describe("LiveLessonShell", () => {
       state: "listening",
     }));
     expect(harness.start).not.toHaveBeenCalled();
+    expect(harness.redirect).not.toHaveBeenCalled();
     expect(screen.getByTestId("visual-state").textContent).toBe("none");
 
     act(() => harness.onEvent?.({
@@ -244,6 +273,7 @@ describe("LiveLessonShell", () => {
       interrupted: false,
     }));
     expect(harness.start).not.toHaveBeenCalled();
+    expect(harness.redirect).not.toHaveBeenCalled();
     expect(screen.getByTestId("visual-state").textContent).toBe("none");
 
     act(() => harness.onEvent?.({
@@ -256,8 +286,8 @@ describe("LiveLessonShell", () => {
     expect(harness.start).toHaveBeenCalledWith(
       expect.objectContaining({
         concept: "Water boils at 99.97 degrees Celsius",
-        continuityKey: "conversation-water-boils-at-99-97-degrees-celsius", // gitleaks:allow -- deterministic test identifier
-        teachingIntent: "Explain Water boils at 99.97 degrees Celsius.",
+        continuityKey: "niko-moss-moonlit-forest",
+        teachingIntent: "Continue the current story subject with a causal action and a stable handoff.",
         visualDescription: "Water boils at 99.97 degrees Celsius",
         durationSeconds: 5,
       }),
@@ -280,12 +310,12 @@ describe("LiveLessonShell", () => {
     }));
     expect(harness.replace).toHaveBeenCalledWith(
       expect.objectContaining({
-        continuityKey: "conversation-ancient-surveyors-measured-circular-buildings-with-rope",
+        continuityKey: "niko-moss-moonlit-forest",
         visualDescription:
           "Ancient surveyors measured circular buildings with rope",
-        durationSeconds: 5,
+        durationSeconds: 10,
       }),
-      2,
+      3,
       expect.any(String),
     );
     const continuingVisualDescription = harness.replace.mock.calls[0]?.[0].visualDescription;
@@ -296,19 +326,19 @@ describe("LiveLessonShell", () => {
     expect(continuingVisualDescription).not.toContain("motion spine");
   });
 
-  it("starts five-second generation from speech deltas before the turn finishes", () => {
+  it("uses five and ten seconds for the first two clips and ignores later narration sentences", () => {
     render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
 
     act(() => harness.onEvent?.({
       protocolVersion: 1,
       type: "transcript.delta",
       turnId: "streaming-turn",
-      text: "Heat moves through metal as particles collide ",
+      text: "Niko braces the lantern while Moss winds the silver vine. ",
     }));
 
     expect(harness.start).toHaveBeenCalledWith(
       expect.objectContaining({
-        visualDescription: "Heat moves through metal as particles collide",
+        visualDescription: "Niko braces the lantern while Moss winds the silver vine",
         durationSeconds: 5,
       }),
       1,
@@ -319,14 +349,14 @@ describe("LiveLessonShell", () => {
       protocolVersion: 1,
       type: "transcript.delta",
       turnId: "streaming-turn",
-      text: "Collisions transfer energy into neighboring particles. ",
+      text: "The blue leaves lift to reveal a moon-key. ",
     }));
 
     expect(harness.redirect).toHaveBeenCalledWith(
       expect.objectContaining({
-        visualDescription:
-          "Collisions transfer energy into neighboring particles",
-        durationSeconds: 5,
+        visualDescription: "The blue leaves lift to reveal a moon-key",
+        continuityKey: "niko-moss-moonlit-forest",
+        durationSeconds: 10,
       }),
       2,
       expect.any(String),
@@ -334,14 +364,173 @@ describe("LiveLessonShell", () => {
 
     act(() => harness.onEvent?.({
       protocolVersion: 1,
+      type: "transcript.delta",
+      turnId: "streaming-turn",
+      text: "A silver moth circles above the key. ",
+    }));
+
+    expect(harness.start).toHaveBeenCalledOnce();
+    expect(harness.redirect).toHaveBeenCalledOnce();
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
       type: "transcript.final",
       turnId: "streaming-turn",
-      text: "Heat moves through metal as particles collide Collisions transfer energy into neighboring particles.",
+      text: "Niko braces the lantern while Moss winds the silver vine. The blue leaves lift to reveal a moon-key. A silver moth circles above the key.",
       interrupted: false,
     }));
 
     expect(harness.start).toHaveBeenCalledOnce();
     expect(harness.redirect).toHaveBeenCalledOnce();
+  });
+
+  it("guarantees a hidden second continuation when a completed tutor turn has only one visual sentence", () => {
+    render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "transcript.final",
+      turnId: "one-sentence-turn",
+      text: "Niko opens the glowing root-door while Moss holds the moon-key.",
+      interrupted: false,
+    }));
+
+    expect(harness.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        visualDescription: "Niko opens the glowing root-door while Moss holds the moon-key",
+        durationSeconds: 5,
+      }),
+      1,
+      expect.any(String),
+    );
+    expect(harness.redirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        continuityKey: "niko-moss-moonlit-forest",
+        visualDescription: expect.stringContaining("Continue directly from the exact ending"),
+        durationSeconds: 10,
+      }),
+      2,
+      expect.any(String),
+    );
+  });
+
+  it("warms up with five seconds, then rolls ten-second continuations until new guidance", () => {
+    vi.useFakeTimers();
+    let rollingSlotAvailable = false;
+    harness.director.canGenerate.mockImplementation(() => rollingSlotAvailable);
+    const view = render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "transcript.final",
+      turnId: "opening-turn",
+      text: "Niko raises the moon-lantern beside the sealed root-door. Moss turns the silver key until blue vines unwind.",
+      interrupted: false,
+    }));
+
+    expect(harness.start).toHaveBeenCalledWith(
+      expect.objectContaining({ durationSeconds: 5 }),
+      1,
+      expect.any(String),
+    );
+    expect(harness.redirect).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ durationSeconds: 10 }),
+      2,
+      expect.any(String),
+    );
+
+    rollingSlotAvailable = true;
+    act(() => vi.advanceTimersByTime(750));
+    expect(harness.redirect).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        visualDescription: expect.stringContaining("same guided goal"),
+        durationSeconds: 10,
+      }),
+      3,
+      expect.any(String),
+    );
+
+    rollingSlotAvailable = false;
+    fireEvent.click(screen.getByRole("button", { name: "Second" }));
+    rollingSlotAvailable = true;
+    act(() => vi.advanceTimersByTime(750));
+    expect(harness.redirect).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ durationSeconds: 10 }),
+      4,
+      expect.any(String),
+    );
+    rollingSlotAvailable = false;
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "transcript.final",
+      turnId: "guided-turn",
+      text: "Niko pushes the opened root-door while Moss protects the moon-lantern.",
+      interrupted: false,
+    }));
+    expect(harness.replace).toHaveBeenCalledWith(
+      expect.objectContaining({ durationSeconds: 10 }),
+      5,
+      expect.any(String),
+    );
+
+    view.unmount();
+    vi.useRealTimers();
+  });
+
+  it("keeps requesting ten-second continuations while speech is interrupted", () => {
+    vi.useFakeTimers();
+    const view = render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "transcript.final",
+      turnId: "opening-turn",
+      text: "Niko raises the moon-lantern beside the sealed root-door. Moss turns the silver key until blue vines unwind.",
+      interrupted: false,
+    }));
+
+    expect(harness.start).toHaveBeenCalledWith(
+      expect.objectContaining({ durationSeconds: 5 }),
+      1,
+      expect.any(String),
+    );
+    expect(harness.redirect).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ durationSeconds: 10 }),
+      2,
+      expect.any(String),
+    );
+
+    act(() => vi.advanceTimersByTime(750));
+    expect(harness.redirect).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ durationSeconds: 10 }),
+      3,
+      expect.any(String),
+    );
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "transcript.final",
+      turnId: "opening-turn",
+      text: "Niko raises the moon-lantern beside the sealed root-door.",
+      interrupted: true,
+    }));
+
+    act(() => vi.advanceTimersByTime(750));
+    expect(harness.redirect).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ durationSeconds: 10 }),
+      4,
+      expect.any(String),
+    );
+
+    view.unmount();
+    vi.useRealTimers();
   });
 
   it("replaces old playback when the next tutor conversation produces a video", () => {
@@ -363,7 +552,7 @@ describe("LiveLessonShell", () => {
     expect(harness.replace).toHaveBeenCalledWith(
       expect.objectContaining({
         visualDescription: "Magnetic field lines curve around a bar magnet",
-        durationSeconds: 5,
+        durationSeconds: 10,
       }),
       2,
       expect.any(String),
@@ -371,15 +560,24 @@ describe("LiveLessonShell", () => {
     expect(harness.redirect).not.toHaveBeenCalled();
   });
 
-  it("keeps filling the playback queue from the latest explanation", () => {
-    vi.useFakeTimers();
-    const view = render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
+  it("does not generate from partial speech or duplicate the first beat before queuing its fallback", () => {
+    render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
     act(() => harness.onEvent?.({
       protocolVersion: 1,
       type: "transcript.delta",
       turnId: "continuous-turn",
-      text: "Gravity bends a moving planet into a curved orbit. ",
+      text: "Gravity bends a moving planet into ",
     }));
+    expect(harness.start).not.toHaveBeenCalled();
+
+    act(() => harness.onEvent?.({
+      protocolVersion: 1,
+      type: "transcript.delta",
+      turnId: "continuous-turn",
+      text: "a curved orbit. ",
+    }));
+    expect(harness.start).toHaveBeenCalledOnce();
+
     act(() => harness.onEvent?.({
       protocolVersion: 1,
       type: "transcript.final",
@@ -387,29 +585,20 @@ describe("LiveLessonShell", () => {
       text: "Gravity bends a moving planet into a curved orbit.",
       interrupted: false,
     }));
-    harness.redirect.mockClear();
-
-    act(() => vi.advanceTimersByTime(1_500));
-
-    expect(harness.redirect).toHaveBeenCalledTimes(2);
-    expect(harness.redirect).toHaveBeenLastCalledWith(
+    expect(harness.start).toHaveBeenCalledOnce();
+    expect(harness.redirect).toHaveBeenCalledWith(
       expect.objectContaining({
-        visualDescription: "Gravity bends a moving planet into a curved orbit",
-        durationSeconds: 5,
+        visualDescription: expect.stringContaining("Continue directly from the exact ending"),
+        durationSeconds: 10,
       }),
-      3,
+      2,
       expect.any(String),
     );
-
-    harness.director.canGenerate.mockReturnValue(false);
-    act(() => vi.advanceTimersByTime(1_500));
-    expect(harness.redirect).toHaveBeenCalledTimes(2);
-    view.unmount();
-    vi.useRealTimers();
   });
 
   it("keeps the current video playing until the interrupted topic is replaced", () => {
     vi.useFakeTimers();
+    harness.director.canGenerate.mockReturnValue(false);
     const view = render(<LiveLessonShell sessionId="session-1" learnerId="learner-1" />);
 
     act(() => harness.onEvent?.({
@@ -427,11 +616,15 @@ describe("LiveLessonShell", () => {
       text: "Gravity bends a moving planet into a curved orbit.",
       interrupted: true,
     }));
-    expect(harness.continuePlaybackUntilReplacement).toHaveBeenCalledOnce();
     expect(harness.stop).not.toHaveBeenCalled();
+    expect(harness.redirect).toHaveBeenCalledWith(
+      expect.objectContaining({ durationSeconds: 10 }),
+      2,
+      expect.any(String),
+    );
     act(() => vi.advanceTimersByTime(1_500));
     expect(harness.start).toHaveBeenCalledOnce();
-    expect(harness.redirect).not.toHaveBeenCalled();
+    expect(harness.redirect).toHaveBeenCalledOnce();
 
     act(() => harness.onEvent?.({
       protocolVersion: 1,
@@ -444,35 +637,47 @@ describe("LiveLessonShell", () => {
     expect(harness.replace).toHaveBeenCalledWith(
       expect.objectContaining({
         visualDescription: "Magnetic field lines curve around a bar magnet",
-        durationSeconds: 5,
+        durationSeconds: 10,
       }),
-      2,
+      3,
       expect.any(String),
     );
-    expect(harness.redirect).not.toHaveBeenCalled();
+    expect(harness.redirect).toHaveBeenCalledOnce();
     view.unmount();
     vi.useRealTimers();
   });
   it("resolves an abandoned redirect back to the clip that remains on screen", () => {
+    const piSpec = {
+      ...spec,
+      concept: "Pi was discovered by measuring circles",
+      visualDescription: "Pi was discovered by measuring circles",
+      durationSeconds: 15 as const,
+    };
+    const surveyorSpec = {
+      ...spec,
+      concept: "Ancient surveyors measured circular buildings with rope",
+      visualDescription: "Ancient surveyors measured circular buildings with rope",
+      durationSeconds: 15 as const,
+    };
     const view = render(
       <LiveLessonShell sessionId="session-1" learnerId="learner-1" />,
     );
     act(() => harness.onEvent?.({
       protocolVersion: 1,
-      type: "transcript.final",
-      turnId: "spoken-response-1",
-      text: "Pi was discovered by measuring circles.",
-      interrupted: false,
+      type: "visual.start",
+      revision: 1,
+      visualOperationId: "visual-op-pi",
+      spec: piSpec,
     }));
     expect(screen.getByTestId("visual-state").textContent).toBe(
       "live:Pi was discovered by measuring circles",
     );
     act(() => harness.onEvent?.({
       protocolVersion: 1,
-      type: "transcript.final",
-      turnId: "spoken-response-2",
-      text: "Ancient surveyors measured circular buildings with rope.",
-      interrupted: false,
+      type: "visual.redirect",
+      revision: 2,
+      visualOperationId: "visual-op-surveyors",
+      spec: surveyorSpec,
     }));
     expect(screen.getByTestId("visual-state").textContent).toBe(
       "redirecting:Ancient surveyors measured circular buildings with rope",

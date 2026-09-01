@@ -420,7 +420,7 @@ describe("GatewaySessionManager", () => {
     await harness.manager.close();
   });
 
-  it("starts a fresh visual burst after a completed held or idle canvas", async () => {
+  it("starts a fresh visual burst after a learner-requested stop", async () => {
     const harness = createHarness();
     const attachment = await harness.manager.attach(
       "session_12345678",
@@ -439,7 +439,7 @@ describe("GatewaySessionManager", () => {
       }
     };
     await runVisualTool(harness, attachment, "visual-1", visual);
-    await harness.callbacks()!.onToolCall("stop", { name: "stop_visual", arguments: { reason: "complete" } });
+    await harness.callbacks()!.onToolCall("stop", { name: "stop_visual", arguments: { reason: "user_requested" } });
     await runVisualTool(harness, attachment, "visual-2", visual);
 
     expect(harness.bus.events.filter((event) => event.type === "visual.start")).toHaveLength(2);
@@ -468,6 +468,88 @@ describe("GatewaySessionManager", () => {
       turnId: "turn-two",
       text: "New partial",
       interrupted: true
+    }));
+    await harness.manager.close();
+  });
+
+  it("interrupts speech without emitting a visual stop", async () => {
+    const harness = createHarness();
+    const attachment = await harness.manager.attach(
+      "session_12345678",
+      LEARNER,
+      socketAsWebSocket(new FakeSocket()),
+      "call_12345678",
+    );
+    await runVisualTool(harness, attachment, "visual-before-barge-in", {
+      name: "show_visual",
+      arguments: {
+        concept: "Moon-vine bridge",
+        teachingIntent: "Continue the guided story",
+        visualDescription: "Niko crosses while Moss steadies the vine",
+        durationSeconds: 15,
+        continuityKey: "niko-moss-moonlit-forest",
+      },
+    });
+    harness.callbacks()!.onTranscriptDelta("turn-active", "Niko starts across the bridge");
+
+    await harness.manager.handleRawMessage(attachment.session, Buffer.from(JSON.stringify({
+      protocolVersion: 1,
+      commandId: "88888888-8888-4888-8888-888888888888",
+      revision: 1,
+      type: "learner.speech.start",
+      at: 10,
+      turnId: "turn-active",
+      heardCharacters: 12,
+    })), false);
+
+    expect(harness.bus.events).toContainEqual(expect.objectContaining({
+      type: "transcript.final",
+      interrupted: true,
+    }));
+    expect(harness.bus.events).not.toContainEqual(expect.objectContaining({
+      type: "visual.stop",
+      reason: "interrupted",
+    }));
+    await harness.manager.close();
+  });
+
+  it("does not emit a visual stop when one ready clip reaches its duration", async () => {
+    const harness = createHarness();
+    const attachment = await harness.manager.attach(
+      "session_12345678",
+      LEARNER,
+      socketAsWebSocket(new FakeSocket()),
+      "call_12345678",
+    );
+    await runVisualTool(harness, attachment, "visual-ready", {
+      name: "show_visual",
+      arguments: {
+        concept: "Lantern river",
+        teachingIntent: "Keep the story moving",
+        visualDescription: "Niko guides a lantern while Moss turns the waterwheel",
+        durationSeconds: 5,
+        continuityKey: "niko-moss-moonlit-forest",
+      },
+    });
+    const visual = harness.bus.events.find(
+      (event): event is Extract<SessionEvent, { type: "visual.start" | "visual.redirect" }> =>
+        event.type === "visual.start" || event.type === "visual.redirect",
+    )!;
+    vi.useFakeTimers();
+
+    await harness.manager.handleRawMessage(attachment.session, Buffer.from(JSON.stringify({
+      protocolVersion: 1,
+      type: "visual.ready",
+      sessionId: attachment.session.id,
+      visualOperationId: visual.visualOperationId,
+      visualRevision: visual.revision,
+      reservationId: "reservation-visual-ready",
+    })), false);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(harness.bus.events).not.toContainEqual(expect.objectContaining({
+      type: "visual.stop",
+      reason: "complete",
     }));
     await harness.manager.close();
   });
@@ -567,7 +649,7 @@ describe("GatewaySessionManager", () => {
       name: "record_learning_evidence",
       arguments: { concept: "refraction", evidence: "Prediction selected", confidenceDelta: 0.2, preferenceSignals: {} }
     });
-    await harness.callbacks()!.onToolCall("stop", { name: "stop_visual", arguments: { reason: "complete" } });
+    await harness.callbacks()!.onToolCall("stop", { name: "stop_visual", arguments: { reason: "user_requested" } });
     await harness.callbacks()!.onToolCall("evidence-2", {
       name: "record_learning_evidence",
       arguments: { concept: "refraction", evidence: "Explained the bend", confidenceDelta: 0.1, preferenceSignals: {} }

@@ -169,91 +169,27 @@ const RESPONSE_SCHEMA = {
   },
 } as const;
 
-interface LocalTutorTopic {
-  readonly pattern: RegExp;
-  readonly discipline: ScienceDiscipline;
-  readonly concept: string;
-  readonly reply: string;
-  readonly teachingIntent: string;
-  readonly visualDescription: string;
-  readonly continuityKey: string;
-  readonly branches: readonly [string, string, string];
-}
-
-const LOCAL_TUTOR_TOPICS: readonly LocalTutorTopic[] = [
-  {
-    pattern: /\b(moon|orbit|orbital|satellite|space station|iss)\b/i,
-    discipline: "astronomy",
-    concept: "Orbital motion",
-    reply: "The Moon is always falling toward Earth, but it also moves sideways fast enough to keep missing it. Gravity continuously bends that sideways motion into a curved path. That continuous free fall is an orbit.",
-    teachingIntent: "Show that an orbit combines inward gravitational acceleration with sideways velocity.",
-    visualDescription: "Earth centered in frame while the Moon follows a clear curved orbit; a tangent velocity arrow points sideways and repeated gravity arrows point inward toward Earth.",
-    continuityKey: "physics-orbits",
-    branches: ["Change the Moon's speed", "Compare the ISS", "Explore gravity"],
-  },
-  {
-    pattern: /\b(gravity|fall|falling|terminal velocity|weight)\b/i,
-    discipline: "physics",
-    concept: "Gravity and falling motion",
-    reply: "Gravity accelerates objects toward Earth's center. In a vacuum, objects at the same place share the same gravitational acceleration; in air, drag and shape can make their observed falls different.",
-    teachingIntent: "Separate gravitational acceleration from the effect of air resistance.",
-    visualDescription: "Two differently sized objects falling side by side with equal downward gravity arrows while optional air-drag arrows show why their motion can differ in air.",
-    continuityKey: "physics-gravity",
-    branches: ["Remove the air", "Add a parachute", "Compare Earth and Moon"],
-  },
-  {
-    pattern: /\b(cell|cells|mitochondria|atp|photosynthesis)\b/i,
-    discipline: "biology",
-    concept: "Cellular energy",
-    reply: "Cells transform energy rather than creating it. Mitochondria transfer energy from food molecules into ATP, which cells use to power transport, movement, repair, and other work.",
-    teachingIntent: "Trace usable energy from food molecules into ATP and cellular work.",
-    visualDescription: "A clean cell cross-section with food molecules entering a mitochondrion, ATP packets leaving it, and arrows carrying energy to several cellular processes.",
-    continuityKey: "biology-cell-energy",
-    branches: ["Follow one ATP molecule", "Compare plants and animals", "Explore mitochondria"],
-  },
-  {
-    pattern: /\b(atom|atomic|electron|proton|neutron|element)\b/i,
-    discipline: "chemistry",
-    concept: "Atomic structure",
-    reply: "An atom has a tiny nucleus containing protons and neutrons, surrounded by electrons described by probability clouds. The number of protons identifies the element, while electron arrangement drives much of its chemistry.",
-    teachingIntent: "Contrast the compact nucleus with the much larger electron cloud.",
-    visualDescription: "An accurate scale-inspired atom diagram that zooms from a compact proton-neutron nucleus outward into layered translucent electron probability clouds.",
-    continuityKey: "chemistry-atoms",
-    branches: ["Zoom into the nucleus", "Compare two elements", "Explore electron clouds"],
-  },
-  {
-    pattern: /\b(water|polar|polarity|hydrogen bond|ice)\b/i,
-    discipline: "chemistry",
-    concept: "Water polarity",
-    reply: "Water is polar because oxygen pulls the shared electrons more strongly and the molecule is bent. That creates a slightly negative oxygen side and slightly positive hydrogen sides, allowing neighboring molecules to attract through hydrogen bonds.",
-    teachingIntent: "Connect water's bent shape to charge separation and hydrogen bonding.",
-    visualDescription: "Bent water molecules with partial-charge labels rotate so positive hydrogen ends align with negative oxygen ends, forming visible hydrogen-bond links.",
-    continuityKey: "chemistry-water-polarity",
-    branches: ["Explain why ice floats", "Dissolve salt", "Explore surface tension"],
-  },
-];
-
-const LOCAL_TUTOR_DEFAULT: LocalTutorTopic = {
-  pattern: /.*/,
-  discipline: "general-science",
-  concept: "Scientific modeling",
-  reply: "Scientific models connect what we observe to explanations we can test. A useful model identifies a pattern, proposes a mechanism, predicts what should happen next, and then changes when evidence disagrees.",
-  teachingIntent: "Demonstrate how a scientific question becomes a testable conceptual model.",
-  visualDescription: "A clean scientific modeling loop connecting an observation, a question, a model, a prediction, and a test with directional arrows.",
-  continuityKey: "general-scientific-model",
-  branches: ["Explore orbits", "Explore cells", "Explore atoms"],
-};
-
 export class LocalCompanionTutor implements CompanionTutorProvider {
   async generate(request: CompanionTutorRequest): Promise<unknown> {
-    const topic = LOCAL_TUTOR_TOPICS.find(({ pattern }) => pattern.test(request.question))
-      ?? LOCAL_TUTOR_DEFAULT;
+    const normalizedQuestion = request.question.toLowerCase();
+    const rescue = /rescue|help|save|catch|star/u.test(normalizedQuestion);
+    const puzzle = /puzzle|door|key|riddle|open/u.test(normalizedQuestion);
+    const beat = rescue ? {
+      reply: "Niko springs from a glowing root and bumps the falling star-seed toward Moss, who unfolds a leaf catcher as nearby lantern fungi flare gold. Moss cradles the humming seed while Niko plants it beside a trembling stone bud, and glowing roots curl into a tiny doorway beneath them.",
+      choices: ["Plant the star-seed", "Follow the silver moths"],
+    } : puzzle ? {
+      reply: "Niko swings across the moon-vine and presses a sun-shaped stone while Moss spins his wheel inside the matching socket, opening the root-door in bright ripples. Beyond the doorway, Niko dives beneath a falling star-seed while Moss stretches a broad leaf between them, catching it as the hidden chamber glows awake.",
+      choices: ["Leap for the star-seed", "Ask the lantern owls"],
+    } : {
+      reply: "Niko braces a tipping lantern mushroom while Moss winds its loose silver vine around his brass wheel, lifting blue leaves that reveal a tiny moon-key. The key skitters toward a mirror puddle, so Niko pins it beneath one paw while Moss projects an amber path toward the sleeping root-door.",
+      choices: ["Swing on the moon-vine", "Build a leaf boat"],
+    };
     const presentCards = {
       name: "present_cards",
       arguments: {
         purpose: "branch",
         prompt: "Where should we take this next?",
-        cards: topic.branches.map((title, order) => ({
+        cards: beat.choices.map((title, order) => ({
           title,
           description: `Continue by choosing ${title.toLocaleLowerCase()}.`,
           spokenAliases: [String(order + 1), title],
@@ -262,19 +198,7 @@ export class LocalCompanionTutor implements CompanionTutorProvider {
       },
     };
     const toolCalls: unknown[] = [presentCards];
-    if (/\b(show|visual|animate|video|demonstrate|look)\b/i.test(request.question)) {
-      toolCalls.unshift({
-        name: "show_visual",
-        arguments: {
-          concept: topic.concept,
-          teachingIntent: topic.teachingIntent,
-          visualDescription: topic.visualDescription,
-          durationSeconds: 5,
-          continuityKey: topic.continuityKey,
-        },
-      });
-    }
-    return { discipline: topic.discipline, reply: topic.reply, toolCalls };
+    return { discipline: "general-science", reply: beat.reply, toolCalls };
   }
 }
 
@@ -310,7 +234,7 @@ export class OpenAiCompanionTutor implements CompanionTutorProvider {
                     `Learner question: ${request.question}`,
                     `Turn number: ${request.turnNumber}`,
                     buildLearnerMemoryMessage(request.learnerContext) ?? "",
-                    "Return a substantive answer plus exactly one useful present_cards checkpoint. Add show_visual only when motion materially improves understanding. Add record_learning_evidence only after meaningful observed learner reasoning or a demonstrated preference; never treat a question or self-report alone as mastery evidence. Never claim an intent has completed.",
+                    "Return exactly two short, sequential story sentences plus exactly one silent present_cards accessibility checkpoint. The first sentence is the child-guided clip and the second is its automatic continuation. Never ask a spoken question or offer spoken choices. Do not call show_visual because the transcript pipeline animates every completed sentence automatically. Call stop_visual with reason user_requested only when the learner explicitly asks to stop or end the visual story; never call it for interruption, topic change, or clip completion. Add record_learning_evidence only after meaningful observed learner reasoning or a demonstrated preference; never treat a question or self-report alone as mastery evidence. Never claim an intent has completed.",
                   ].filter(Boolean).join("\n"),
                 },
               ],

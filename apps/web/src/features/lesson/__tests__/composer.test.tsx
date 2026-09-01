@@ -9,6 +9,7 @@ function renderComposer(overrides: Partial<Parameters<typeof Composer>[0]> = {})
     micAvailable: true,
     onToggleMic: vi.fn(),
     onInterrupt: vi.fn(),
+    onSendText: vi.fn(),
     ...overrides,
   };
   render(<Composer {...props} />);
@@ -42,14 +43,18 @@ describe("Composer", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("requires voice reconnection when microphone audio is unavailable", () => {
-    renderComposer({ status: "text_only", micEnabled: false, micAvailable: false });
+  it("offers typed steering when microphone audio is unavailable", () => {
+    const props = renderComposer({ status: "text_only", micEnabled: false, micAvailable: false });
 
     expect(screen.getByRole("button", { name: "Enable microphone" })).toHaveProperty(
       "disabled",
       true,
     );
-    expect(screen.getByText("Voice connection unavailable")).toBeTruthy();
-    expect(screen.getByText("Reconnect voice to continue the lesson.")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Tell the story what happens next" }), {
+      target: { value: "Build a leaf boat" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(props.onSendText).toHaveBeenCalledWith("Build a leaf boat");
+    expect(screen.getByText("Voice is unavailable, so you can steer the story by typing.")).toBeTruthy();
   });
 });

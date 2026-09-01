@@ -6,6 +6,7 @@ node_modules/
 dist/
 coverage/
 test-results/
+outputs/
 *.log
 .cache/
 *.tsbuildinfo
@@ -16,3 +17,4 @@ test-results/
 .idea/
 .vscode/
 .DS_Store
+.h3-max-prompt.txt

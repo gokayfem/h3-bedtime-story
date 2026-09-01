@@ -1,8 +1,8 @@
-# H3 Max Realtime Education
+# Storytime
 
-Realtime, interruptible science tutoring with continuously generated H3 Max teaching videos.
+Realtime, interruptible stories that children steer by speaking or typing, with continuously generated H3 Max animation.
 
-The tutor listens and speaks naturally while the visual director keeps a bounded queue of five-second clips. The current video never disappears while new media is generating. Interruptions cancel stale work without stopping playback; the first decoded video for the new topic immediately replaces the old one.
+The storyteller begins with a five-second opening, then runs a rolling chain of causal ten-second beats without stopping to ask what should happen next. Each clip plays once; if its continuation is not ready yet, it stops on its final frame until the handoff. When a child interrupts or adds guidance, stale unseen beats are discarded, the clip already on screen finishes, and its final frame becomes the start of the guided branch without restarting Niko, Moss, or the forest.
 
 ## Project demo
 
@@ -10,10 +10,13 @@ https://github.com/user-attachments/assets/48bba979-9c30-438c-871c-73c37431bff3
 
 ## Features
 
-- Realtime voice tutoring with automatic barge-in
-- Continuous H3 Max video generation from the latest explanation
+- Realtime voice storytelling with automatic barge-in and a typed fallback
+- Automatic 5s → continuous 10s H3 Max story pipeline
+- Automatic text-to-video opening and image-to-video continuation
+- Stable Story Bible for Niko, Moss, and the moonlit forest
+- Automatic causal continuation with free-form child steering at any moment
 - Seamless decoded-video handoffs with no blank canvas
-- Immediate topic replacement after an interruption
+- Stale-queue cancellation and visible-frame replacement after an interruption
 - Transcript, lesson cards, progress state, and reduced-motion support
 - Per-learner and global video quotas
 - Local in-memory development mode
@@ -27,30 +30,33 @@ https://github.com/user-attachments/assets/48bba979-9c30-438c-871c-73c37431bff3
 - Vitest
 - Optional Neon PostgreSQL, Upstash Redis, and a Node.js realtime gateway
 
-## How H3 prompts are created
+## How story beats become H3 prompts
 
-The application does not use a separate prompt-writing service. The prompt is derived deterministically from the tutor's current science explanation:
+The application does not use a separate prompt-writing service. The story contract makes every narration sentence a compact continuation brief:
 
-1. Grok Voice produces the spoken science explanation.
-2. The realtime transcript is split into concrete scientific subjects as it arrives.
-3. Generic greetings are ignored. Each useful subject becomes a five-second visual specification containing the concept, teaching intent, scientific description, and continuity key.
-4. `H3PromptCompiler` applies the age-appropriate safety policy, normalizes the subject, and combines it with the permanent illustrated style bible.
-5. `/api/fal/generate` sends the compiled prompt directly to `minimax/h3-max/text-to-video`.
+1. Grok Voice narrates exactly two chronological micro-beats in 40–64 words without asking a question or waiting for permission: one child-guided beat and one automatic continuation.
+2. The first usable narration creates a five-second opening and the second creates a ten-second bridge. If the voice model ends after one usable sentence, the browser silently derives the bridge from the opening.
+3. `H3PromptCompiler` applies child-safety checks and combines the action with the permanent Story Bible, causal motion rules, sound direction, and a stable ending-pose requirement.
+4. The opening uses `minimax/h3-max/text-to-video`.
+5. Every later clip is a ten-second automatic continuation. The preceding generated clip's final frame is sent to `minimax/h3-max/image-to-video` with prompt expansion disabled.
+6. The director keeps at most two clips in flight, generates serially from ending frames, and continues until new child guidance arrives. A steer cancels only unseen work, lets the visible clip finish, and generates the next guided ten-second clip from that exact final frame.
+7. The 480p endpoints run with `sync_mode: false`, so FAL returns a CDN URL that can begin loading without waiting for a base64 response.
 
 Every generated prompt follows this structure:
 
 ```text
-STYLE BIBLE: premium mixed 2D illustrated motion language, hand-drawn cel
-animation, rough ink contours, paper grain, restrained screen-print texture,
-and a stable cobalt, crimson, ochre, ivory, and black palette.
+STORY BIBLE: stable Niko, Moss, moonlit forest, hand-drawn storybook cel
+animation, paper grain, ink contours, and cobalt/moss/amber palette.
 
-Scientific subject: <the current concrete science explanation>
+STORY BEAT: <what changes in this turn>
+NARRATIVE PURPOSE: <why the beat matters>
+ACTION: <distinct Niko action + distinct Moss action + environmental consequence>
 
-Create a fresh, exactly 5-second, 16:9 scientific animation of only this
-subject. Keep the film text-free, centered, and fully illustrated.
+Create exactly the requested duration: setup, committed action, visible consequence,
+then a stable two-second ending pose that can begin the next beat.
 ```
 
-The tutor supplies the scientific subject through its explanation; application code supplies the visual style, safety checks, duration, aspect ratio, and generation constraints.
+The storyteller supplies the action chain; application code owns canon, safety, duration, final-frame continuity, queue invalidation, and generation constraints.
 
 ## Quick start
 
@@ -62,8 +68,8 @@ Requirements:
 - A fal API key for realtime voice and generated video
 
 ```sh
-git clone https://github.com/gokayfem/h3-max-education.git
-cd h3-max-education
+git clone https://github.com/gokayfem/h3-bedtime-story.git
+cd h3-bedtime-story
 corepack enable
 corepack prepare pnpm@11.21.0 --activate
 pnpm install --frozen-lockfile
@@ -82,7 +88,7 @@ Start only the self-contained web demo:
 pnpm dev
 ```
 
-Open [http://localhost:3000/learn](http://localhost:3000/learn), allow microphone access, and begin a science conversation.
+Open [http://localhost:3000/learn](http://localhost:3000/learn), allow microphone access, and tell Niko and Moss what to do. If voice is unavailable, the same story can be steered with the text box.
 
 Local development uses in-memory sessions when database and Redis variables are absent. Data resets when the process exits.
 
@@ -121,7 +127,7 @@ The local web demo requires only `FAL_KEY`. When that key is present:
 
 - Grok Voice and queued H3 Max video generation are enabled automatically.
 - The browser-safe feature flags are derived during the Next.js build; the fal key itself remains server-only.
-- Typed fallback uses the deterministic local science tutor.
+- Typed fallback uses a deterministic local story guide when no OpenAI key is configured.
 - Sessions, quotas, and lesson state use in-memory storage.
 
 Optional kill switches remain available for debugging: set `FAL_GROK_VOICE_ENABLED=false`, `FAL_QUEUE_ENABLED=false`, or `LOCAL_TUTOR_ENABLED=false`. You do not need to add them otherwise.
@@ -161,7 +167,7 @@ Configure deployment secrets in the hosting provider, not in repository files. A
 
 ## Safety and privacy
 
-H3 Max Realtime Education is an AI learning companion, not an authoritative source, certified curriculum, or medical or safety adviser. Voice audio is sent to configured realtime providers while the microphone is active. Generated visual prompts are sent to fal. Review the included privacy and terms pages before deploying the application to learners.
+Storytime is a generative storytelling prototype for children. Voice audio is sent to configured realtime providers while the microphone is active, and generated visual prompts and continuity frames are sent to fal. Review and update the included privacy and terms pages before a public child-facing deployment.
 
 ## Repository policy
 

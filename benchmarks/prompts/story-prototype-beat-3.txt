@@ -1,0 +1,7 @@
+For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+
+integrated_multimodal_description: [Shot 1] Continue directly and seamlessly from <Picture 1> in the identical hand-painted children's storybook style. Preserve the exact red fox with cobalt-blue scarf, the exact moss-covered round robot, their faces, proportions, colors, moonlit palette, meadow, fireflies, lighting, and camera angle. The chosen story direction is: follow the golden fireflies. The fireflies form a gentle glowing trail; the fox trots after them with delighted curiosity while the robot follows carefully. The camera tracks slowly beside both characters as the trail leads to a tiny round door in the roots of an ancient tree. They stop together before the door and exchange an excited look. Keep both characters fully recognizable and stable. One continuous shot, calm natural movement, no cuts, no dialogue, no captions, no written text. End on a stable wide composition of both characters facing the little glowing door.
+
+overall_soundscape: Soft grass footsteps, faint robot servos, quiet nighttime leaves, delicate firefly chimes, and a subtle wooden creak from the tiny door.
+
+non_diegetic_music: Soft warm celesta and muted strings that rise gently with discovery, child-friendly and reassuring.
