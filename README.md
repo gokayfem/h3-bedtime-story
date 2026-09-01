@@ -6,7 +6,7 @@ Storytime listens for the child's idea, turns it into a safe story beat, and beg
 
 ## Demo
 
-https://github.com/user-attachments/assets/48bba979-9c30-438c-871c-73c37431bff3
+https://github.com/user-attachments/assets/cbc183e8-eb2d-4190-8bde-e89fff89e952
 
 ## The experience
 
